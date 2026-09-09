@@ -59,7 +59,7 @@ public sealed class ConfidenceScorerTests
     public void ExplicitSpecialVsEpisodeConflict_IsAmbiguous()
     {
         var result = _engine.Recognize(
-            new RecognitionRequest("Example - OVA S01E03.mkv"));
+            new RecognitionRequest("Example/OVA/Example.S01E03.mkv"));
 
         Assert.Equal(MediaKind.Special, result.MediaKind);
         Assert.True(result.IsAmbiguous);
