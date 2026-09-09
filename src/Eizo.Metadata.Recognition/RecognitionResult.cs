@@ -7,8 +7,8 @@ public sealed record RecognitionResult(
     MediaKind MediaKind,
     string? Title,
     int? SeasonNumber,
-    int? EpisodeNumber,
-    int? EpisodeEndNumber,
+    decimal? EpisodeNumber,
+    decimal? EpisodeEndNumber,
     int? Year,
     double Confidence,
     IReadOnlyList<RecognitionEvidence> Evidence);

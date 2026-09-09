@@ -40,7 +40,6 @@ The preprocessing layer now decomposes logical paths, normalizes Unicode, preser
 source spans, extracts balanced bracket groups and classifies common release/technical
 noise. The first sanitized anime/J-drama-style smoke corpus contains 120 cases.
 
-
 Scope:
 
 - split logical path into directory and filename context without requiring file access;
@@ -69,31 +68,41 @@ Exit gate:
 
 ## Stage 2 — Season and episode extraction
 
-Implement episode semantics independently from title matching.
+Status: **implemented and CI-verified**.
 
-Required syntax families:
+The default `RecognitionEngine` now consumes Stage 1 preprocessing and emits
+provider-neutral season/episode candidates. Episode numbers use decimal values so
+explicit forms such as `12.5` can be represented without lossy conversion.
+
+Implemented syntax includes:
 
 - `S01E03`, `S1E3`, `1x03`;
 - `EP03`, `E03`, `Episode 03`;
 - Japanese `第3話`, `第03話`;
-- bounded bare numbers common in anime releases;
-- episode ranges such as `01-02` and `E01-E02`;
-- decimal/special episode numbers where evidence is strong;
-- season/cour folder context.
+- ranges such as `S01E03-E04`, `E01-E02` and `EP01-EP02`;
+- anime-style delimited bare numbers such as `Title - 14`;
+- pure numeric filenames such as `01.mkv`;
+- explicit decimal episode values;
+- Season / 第N期 / ordinal Season folder context;
+- Cour / 第Nクール / ordinal Cour folder context.
 
-Collision protection:
+Collision protection covers:
 
 - years such as 1998 / 2026;
-- 720 / 1080 / 2160 resolution tokens;
-- 8bit / 10bit;
-- x264 / x265 / H264 / H265;
-- audio channel/version numbers.
+- 360 / 480 / 576 / 720 / 1080 / 1440 / 2160 / 4320 resolution values;
+- codec and bit-depth tags such as x264 / x265 / H264 / H265 / 8bit / 10bit;
+- ambiguous unbounded numbers, which are left unresolved instead of being forced.
+
+The filename season wins when directory context conflicts, while the conflict is kept
+as explicit evidence. Regex matching has bounded timeouts, and malformed bracket
+preprocessing is linear rather than repeatedly rescanning the same suffix.
 
 Exit gate:
 
 - strong episode patterns are parsed without title knowledge;
-- ambiguous bare numbers lower confidence instead of being forced;
-- every supported rule has positive and collision tests.
+- ambiguous bare numbers are not forced;
+- supported rules have positive and collision tests;
+- deterministic output and malformed-input robustness are covered by tests.
 
 ---
 

@@ -20,6 +20,9 @@ internal static class PathPreprocessor
         ['『'] = '』',
     };
 
+    private static readonly Dictionary<char, char> ClosingBrackets =
+        Brackets.ToDictionary(static pair => pair.Value, static pair => pair.Key);
+
     internal static NormalizedMediaPath Preprocess(string path)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -67,14 +70,14 @@ internal static class PathPreprocessor
     private static IReadOnlyList<RecognitionToken> Tokenize(string stem)
     {
         var tokens = new List<RecognitionToken>();
+        var bracketMatches = BuildBracketMatches(stem);
         var index = 0;
 
         while (index < stem.Length)
         {
-            if (Brackets.TryGetValue(stem[index], out var closing))
+            if (Brackets.ContainsKey(stem[index]))
             {
-                var closeIndex = FindBalancedClose(stem, index, stem[index], closing);
-                if (closeIndex >= 0)
+                if (bracketMatches.TryGetValue(index, out var closeIndex))
                 {
                     var raw = stem[index..(closeIndex + 1)];
                     var inner = stem[(index + 1)..closeIndex];
@@ -90,8 +93,9 @@ internal static class PathPreprocessor
                     continue;
                 }
 
-                // Malformed input must always make progress. Preserve the unmatched
-                // opening bracket as ordinary text rather than consuming the suffix.
+                // Preserve malformed opening brackets as ordinary text. Bracket
+                // matching is precomputed in one pass, so malformed input cannot
+                // cause repeated suffix scans or quadratic behavior.
                 tokens.Add(CreateToken(
                     TokenKind.Text,
                     stem[index].ToString(),
@@ -131,6 +135,40 @@ internal static class PathPreprocessor
         }
 
         return tokens;
+    }
+
+    private static Dictionary<int, int> BuildBracketMatches(string value)
+    {
+        var matches = new Dictionary<int, int>();
+        var stacks = Brackets.Keys.ToDictionary(
+            static opening => opening,
+            static _ => new Stack<int>());
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var current = value[i];
+            if (Brackets.ContainsKey(current))
+            {
+                stacks[current].Push(i);
+                continue;
+            }
+
+            if (!ClosingBrackets.TryGetValue(current, out var opening))
+            {
+                continue;
+            }
+
+            var stack = stacks[opening];
+            if (stack.Count == 0)
+            {
+                continue;
+            }
+
+            var openingIndex = stack.Pop();
+            matches[openingIndex] = i;
+        }
+
+        return matches;
     }
 
     private static void AddChunkTokens(
@@ -198,32 +236,6 @@ internal static class PathPreprocessor
             start,
             raw.Length,
             IsBracketed: false);
-
-    private static int FindBalancedClose(
-        string value,
-        int openingIndex,
-        char opening,
-        char closing)
-    {
-        var depth = 0;
-        for (var i = openingIndex; i < value.Length; i++)
-        {
-            if (value[i] == opening)
-            {
-                depth++;
-            }
-            else if (value[i] == closing)
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
-    }
 
     private static bool IsHardSeparator(char c) =>
         char.IsWhiteSpace(c) || c is '.' or '_';

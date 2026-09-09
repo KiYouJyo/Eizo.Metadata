@@ -24,7 +24,7 @@ public sealed class ContractSmokeTests
             MediaKind.SeriesEpisode,
             "葬送のフリーレン",
             1,
-            14,
+            14m,
             null,
             2023,
             0.92,
@@ -32,7 +32,7 @@ public sealed class ContractSmokeTests
 
         Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
         Assert.Equal("葬送のフリーレン", result.Title);
-        Assert.Equal(14, result.EpisodeNumber);
+        Assert.Equal(14m, result.EpisodeNumber);
         Assert.Single(result.Evidence);
     }
 }
