@@ -72,7 +72,20 @@ dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 
 ## Status
 
-**Foundation / Recognition Stage 0.**
+**Recognition Stage 2 — season and episode extraction.**
+
+Implemented so far:
+
+- provider-neutral Recognition contracts and default `RecognitionEngine`;
+- Unicode-safe logical path preprocessing and release-noise tokenization;
+- season/episode parsing for common series, anime and Japanese-drama syntax;
+- episode ranges and decimal episode numbers;
+- season/cour directory context;
+- collision protection for years, resolutions and common technical-number tokens;
+- deterministic evidence output with no network or disk dependency;
+- Windows/Linux CI, package validation and a sanitized 120-case Stage 1 corpus.
+
+Title candidate extraction remains the next stage.
 
 See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
 plan and acceptance criteria.
