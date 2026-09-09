@@ -11,52 +11,52 @@ internal static class EpisodeExtractor
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeasonEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])S(?<season>d{1,2})E(?<episode>d{1,3}(?:.d+)?)(?:s*[-~]s*(?:E)?(?<end>d{1,3}(?:.d+)?))?(?!d)",
+        @"(?<![A-Za-z0-9])S(?<season>\d{1,2})E(?<episode>\d{1,3}(?:\.\d+)?)(?:\s*[-~]\s*(?:E)?(?<end>\d{1,3}(?:\.\d+)?))?(?!\d)",
         Options,
         RegexTimeout);
 
     private static readonly Regex OneXEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])(?<season>d{1,2})x(?<episode>d{1,3}(?:.d+)?)(?!d)",
+        @"(?<![A-Za-z0-9])(?<season>\d{1,2})x(?<episode>\d{1,3}(?:\.\d+)?)(?!\d)",
         Options,
         RegexTimeout);
 
     private static readonly Regex PrefixedEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)s*[-_. ]?(?<episode>d{1,3}(?:.d+)?)(?:s*[-~]s*(?:EP|E)?s*(?<end>d{1,3}(?:.d+)?))?(?!d)",
+        @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)\s*[-_. ]?(?<episode>\d{1,3}(?:\.\d+)?)(?:\s*[-~]\s*(?:EP|E)?\s*(?<end>\d{1,3}(?:\.\d+)?))?(?!\d)",
         Options,
         RegexTimeout);
 
     private static readonly Regex JapaneseEpisodeRegex = new(
-        @"第s*(?<episode>d{1,3}(?:.d+)?)s*話",
+        @"第\s*(?<episode>\d{1,3}(?:\.\d+)?)\s*話",
         Options,
         RegexTimeout);
 
     private static readonly Regex DashEpisodeRegex = new(
-        @"(?:^|s)[-–—−]s*(?<episode>d{1,3}(?:.d+)?)(?:s*[-~]s*(?<end>d{1,3}(?:.d+)?))?(?=s|$|[|(|【)",
+        @"(?:^|\s)[-–—−]\s*(?<episode>\d{1,3}(?:\.\d+)?)(?:\s*[-~]\s*(?<end>\d{1,3}(?:\.\d+)?))?(?=\s|$|\[|\(|【)",
         Options,
         RegexTimeout);
 
     private static readonly Regex PureEpisodeRegex = new(
-        @"^s*(?<episode>d{1,3}(?:.d+)?)s*$",
+        @"^\s*(?<episode>\d{1,3}(?:\.\d+)?)\s*$",
         Options,
         RegexTimeout);
 
     private static readonly Regex SeasonDirectoryRegex = new(
-        @"(?:^|[s._-])(?:SEASON|S)s*0?(?<season>d{1,2})(?:$|[s._-])",
+        @"(?:^|[\s._-])(?:SEASON|S)\s*0?(?<season>\d{1,2})(?:$|[\s._-])",
         Options,
         RegexTimeout);
 
     private static readonly Regex JapaneseSeasonDirectoryRegex = new(
-        @"第s*0?(?<season>d{1,2})s*(?:期|シーズン)",
+        @"第\s*0?(?<season>\d{1,2})\s*(?:期|シーズン)",
         Options,
         RegexTimeout);
 
     private static readonly Regex OrdinalSeasonDirectoryRegex = new(
-        @"(?<!d)(?<season>d{1,2})(?:ST|ND|RD|TH)s+SEASON",
+        @"(?<!\d)(?<season>\d{1,2})(?:ST|ND|RD|TH)\s+SEASON",
         Options,
         RegexTimeout);
 
     private static readonly Regex CourDirectoryRegex = new(
-        @"(?:COURs*0?(?<cour>d{1,2})|第s*0?(?<courjp>d{1,2})s*クール|(?<courord>d{1,2})(?:ST|ND|RD|TH)s+COUR)",
+        @"(?:COUR\s*0?(?<cour>\d{1,2})|第\s*0?(?<courjp>\d{1,2})\s*クール|(?<courord>\d{1,2})(?:ST|ND|RD|TH)\s+COUR)",
         Options,
         RegexTimeout);
 
@@ -95,14 +95,14 @@ internal static class EpisodeExtractor
             return null;
         }
 
-        var episode = ParseDecimal(match.Groups["episode"].Value);
+        var episode = ParseDecimal(GetGroupValue(match, "episode"));
         if (episode is null)
         {
             return null;
         }
 
-        var season = ParseInt(match.Groups["season"].Value);
-        var end = ParseDecimal(match.Groups["end"].Value);
+        var season = ParseInt(GetGroupValue(match, "season"));
+        var end = ParseDecimal(GetGroupValue(match, "end"));
 
         var evidence = new List<RecognitionEvidence>
         {
@@ -130,13 +130,13 @@ internal static class EpisodeExtractor
             return null;
         }
 
-        var episode = ParseDecimal(match.Groups["episode"].Value);
+        var episode = ParseDecimal(GetGroupValue(match, "episode"));
         if (episode is null || IsBareCollision(episode.Value))
         {
             return null;
         }
 
-        var end = ParseDecimal(match.Groups["end"].Value);
+        var end = ParseDecimal(GetGroupValue(match, "end"));
         if (end is not null && IsBareCollision(end.Value))
         {
             end = null;
@@ -255,7 +255,7 @@ internal static class EpisodeExtractor
         {
             var match = regex.Match(directory);
             if (match.Success &&
-                int.TryParse(match.Groups["season"].Value, out season) &&
+                int.TryParse(GetGroupValue(match, "season"), out season) &&
                 season is >= 0 and <= 99)
             {
                 return true;
@@ -276,11 +276,17 @@ internal static class EpisodeExtractor
         }
 
         var value =
-            match.Groups["cour"].Success ? match.Groups["cour"].Value :
-            match.Groups["courjp"].Success ? match.Groups["courjp"].Value :
-            match.Groups["courord"].Value;
+            GetGroupValue(match, "cour") ??
+            GetGroupValue(match, "courjp") ??
+            GetGroupValue(match, "courord");
 
         return int.TryParse(value, out cour) && cour is >= 1 and <= 99;
+    }
+
+    private static string? GetGroupValue(Match match, string name)
+    {
+        var group = match.Groups[name];
+        return group.Success ? group.Value : null;
     }
 
     private static bool IsBareCollision(decimal episode)
@@ -300,7 +306,7 @@ internal static class EpisodeExtractor
                value is >= 1900 and <= 2099;
     }
 
-    private static decimal? ParseDecimal(string value)
+    private static decimal? ParseDecimal(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -316,7 +322,7 @@ internal static class EpisodeExtractor
             : null;
     }
 
-    private static int? ParseInt(string value) =>
+    private static int? ParseInt(string? value) =>
         int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
