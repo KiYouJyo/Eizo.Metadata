@@ -34,7 +34,12 @@ Exit gate:
 
 ## Stage 1 — Path normalization and token model
 
-Build the safe preprocessing layer before writing title heuristics.
+Status: **implemented and CI-verified**.
+
+The preprocessing layer now decomposes logical paths, normalizes Unicode, preserves raw
+source spans, extracts balanced bracket groups and classifies common release/technical
+noise. The first sanitized anime/J-drama-style smoke corpus contains 120 cases.
+
 
 Scope:
 
