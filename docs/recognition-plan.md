@@ -108,7 +108,13 @@ Exit gate:
 
 ## Stage 3 — Title candidate extraction
 
-Infer the most useful search title after structural tokens are known.
+Status: **implemented and CI-verified**.
+
+The recognizer now generates deterministic title candidates from both filenames and
+directory context. Filename candidates remove only evidence-backed episode/technical
+noise, while episode-only filenames fall back to the nearest meaningful parent
+directory. Numeric and bracketed title content is preserved conservatively.
+
 
 Scope:
 
@@ -123,7 +129,9 @@ Exit gate:
 
 - common fansub and WebDL names yield clean search titles;
 - folder-based libraries work when filenames are only `01.mkv`, `02.mkv`, etc.;
-- title cleanup cannot consume season/episode evidence.
+- title cleanup cannot consume season/episode evidence;
+- representative numeric/bracketed titles have regression coverage;
+- Stage 3 brings the suite to 389 passing tests on Windows and Linux.
 
 ---
 

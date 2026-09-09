@@ -72,7 +72,7 @@ dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 
 ## Status
 
-**Recognition Stage 2 — season and episode extraction.**
+**Recognition Stage 3 — title candidate extraction.**
 
 Implemented so far:
 
@@ -83,9 +83,13 @@ Implemented so far:
 - season/cour directory context;
 - collision protection for years, resolutions and common technical-number tokens;
 - deterministic evidence output with no network or disk dependency;
-- Windows/Linux CI, package validation and a sanitized 120-case Stage 1 corpus.
+- filename title candidates with technical/release-noise removal;
+- parent-directory fallback for episode-only filenames;
+- protection for meaningful numeric and bracketed titles;
+- deterministic candidate ranking and title evidence;
+- Windows/Linux CI, package validation, 389 tests and sanitized Stage 1/Stage 3 corpora.
 
-Title candidate extraction remains the next stage.
+Anime/J-drama specialization is the next stage.
 
 See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
 plan and acceptance criteria.

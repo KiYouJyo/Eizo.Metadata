@@ -13,19 +13,35 @@ public sealed class RecognitionEngine : IRecognitionEngine
 
         var path = PathPreprocessor.Preprocess(request.Path);
         var episode = EpisodeExtractor.Extract(path);
+        var title = TitleExtractor.Extract(path, episode);
 
         var evidence = new List<RecognitionEvidence>(episode.Evidence);
+        evidence.AddRange(title.Evidence);
+
         var year = TryGetYear(path, evidence);
+        var confidence = CombineConfidence(episode, title);
 
         return new RecognitionResult(
             episode.EpisodeNumber is null ? MediaKind.Unknown : MediaKind.SeriesEpisode,
-            Title: null,
+            title.Title,
             episode.SeasonNumber,
             episode.EpisodeNumber,
             episode.EpisodeEndNumber,
             year,
-            episode.Confidence,
+            confidence,
             evidence);
+    }
+
+    private static double CombineConfidence(
+        EpisodeExtractionResult episode,
+        TitleExtractionResult title)
+    {
+        if (episode.EpisodeNumber is not null && title.Title is not null)
+        {
+            return Math.Min(episode.Confidence, title.Confidence);
+        }
+
+        return Math.Max(episode.Confidence, title.Confidence);
     }
 
     private static int? TryGetYear(
