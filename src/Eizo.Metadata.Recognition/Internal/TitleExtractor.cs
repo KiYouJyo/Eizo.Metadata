@@ -398,6 +398,12 @@ internal static class TitleExtractor
                CourDirectoryRegex.IsMatch(value);
     }
 
+    private static bool IsSeasonOrCourName(string value) =>
+        SeasonDirectoryRegex.IsMatch(value) ||
+        JapaneseSeasonDirectoryRegex.IsMatch(value) ||
+        OrdinalSeasonDirectoryRegex.IsMatch(value) ||
+        CourDirectoryRegex.IsMatch(value);
+
     private static bool IsRemovableNoise(TokenKind kind) =>
         kind is
             TokenKind.ReleaseGroup or
@@ -516,7 +522,7 @@ internal static class TitleExtractor
 
         var normalized = value.Trim();
         if (PureEpisodeRegex.IsMatch(normalized) ||
-            ShouldSkipDirectory(normalized))
+            IsSeasonOrCourName(normalized))
         {
             return false;
         }
