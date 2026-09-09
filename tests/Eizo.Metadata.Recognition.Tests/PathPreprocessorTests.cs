@@ -82,13 +82,13 @@ public sealed class PathPreprocessorTests
         var result = PathPreprocessor.Preprocess(
             "[ANi] 葬送のフリーレン - 14 [1080P][Baha][WEB-DL][AAC AVC][CHT].mp4");
 
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.ReleaseGroup));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.Resolution));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.Source));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.TechnicalGroup));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.Language));
-        Assert.True(result.Tokens.Any(static token =>
-            token.Kind == TokenKind.Number && token.NormalizedValue == "14"));
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.ReleaseGroup);
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.Resolution);
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.Source);
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.TechnicalGroup);
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.Language);
+        Assert.Contains(result.Tokens, static token =>
+            token.Kind == TokenKind.Number && token.NormalizedValue == "14");
     }
 
     [Fact]
@@ -96,10 +96,10 @@ public sealed class PathPreprocessorTests
     {
         var result = PathPreprocessor.Preprocess("VIVANT.S01E03.1080p.WEB-DL.mkv");
 
-        Assert.True(result.Tokens.Any(static token =>
-            token.Kind == TokenKind.Text && token.NormalizedValue == "S01E03"));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.Resolution));
-        Assert.True(result.Tokens.Any(static token => token.Kind == TokenKind.Source));
+        Assert.Contains(result.Tokens, static token =>
+            token.Kind == TokenKind.Text && token.NormalizedValue == "S01E03");
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.Resolution);
+        Assert.Contains(result.Tokens, static token => token.Kind == TokenKind.Source);
     }
 
     [Fact]
@@ -107,10 +107,10 @@ public sealed class PathPreprocessorTests
     {
         var result = PathPreprocessor.Preprocess("ドラゴン桜 2021 第03話.mp4");
 
-        Assert.True(result.Tokens.Any(static token =>
-            token.Kind == TokenKind.Year && token.NormalizedValue == "2021"));
-        Assert.True(result.Tokens.Any(static token =>
-            token.Kind == TokenKind.Text && token.NormalizedValue == "第03話"));
+        Assert.Contains(result.Tokens, static token =>
+            token.Kind == TokenKind.Year && token.NormalizedValue == "2021");
+        Assert.Contains(result.Tokens, static token =>
+            token.Kind == TokenKind.Text && token.NormalizedValue == "第03話");
     }
 
     [Fact]
