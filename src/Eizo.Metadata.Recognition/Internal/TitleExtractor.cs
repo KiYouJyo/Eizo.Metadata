@@ -265,8 +265,7 @@ internal static class TitleExtractor
         }
 
         var hasOtherLexicalContent = path.Tokens.Any(static token =>
-            token.Kind is TokenKind.Text or TokenKind.BracketGroup or TokenKind.Number &&
-            token.Kind != TokenKind.Year);
+            token.Kind is TokenKind.Text or TokenKind.BracketGroup);
 
         if (!hasOtherLexicalContent)
         {
@@ -494,6 +493,5 @@ internal static class TitleExtractor
 
     private static bool IsEdgeDecoration(char c) =>
         char.IsWhiteSpace(c) ||
-        c is '-' or '–' or '—' or '−' or '_' or '.' or ',' or ';' or ':' or
-        '[' or ']' or '(' or ')' or '{' or '}' or '【' or '】';
+        c is '-' or '–' or '—' or '−' or '_' or '.' or ',' or ';' or ':';
 }
