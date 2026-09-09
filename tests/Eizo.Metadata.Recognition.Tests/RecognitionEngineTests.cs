@@ -61,7 +61,18 @@ public sealed class RecognitionEngineTests
         var first = _engine.Recognize(request);
         var second = _engine.Recognize(request);
 
-        Assert.Equal(first, second);
+        Assert.Equal(first.MediaKind, second.MediaKind);
+        Assert.Equal(first.SpecialKind, second.SpecialKind);
+        Assert.Equal(first.EpisodePart, second.EpisodePart);
+        Assert.Equal(first.IsFinalEpisode, second.IsFinalEpisode);
+        Assert.Equal(first.Title, second.Title);
+        Assert.Equal(first.SeasonNumber, second.SeasonNumber);
+        Assert.Equal(first.CourNumber, second.CourNumber);
+        Assert.Equal(first.EpisodeNumber, second.EpisodeNumber);
+        Assert.Equal(first.EpisodeEndNumber, second.EpisodeEndNumber);
+        Assert.Equal(first.SpecialNumber, second.SpecialNumber);
+        Assert.Equal(first.Year, second.Year);
+        Assert.Equal(first.Confidence, second.Confidence);
         Assert.Equal(first.Evidence.Count, second.Evidence.Count);
 
         for (var i = 0; i < first.Evidence.Count; i++)
