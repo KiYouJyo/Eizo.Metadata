@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Eizo.Metadata.Recognition.Tests/Eizo.Metadata.Recognition.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="README.md" />
+  </Folder>
+</Solution>
