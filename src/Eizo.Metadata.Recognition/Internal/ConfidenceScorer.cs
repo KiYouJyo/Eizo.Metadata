@@ -1,0 +1,252 @@
+using System.Globalization;
+
+namespace Eizo.Metadata.Recognition.Internal;
+
+internal static class ConfidenceScorer
+{
+    private const double HighThreshold = 0.85;
+    private const double MediumThreshold = 0.65;
+
+    internal static ConfidenceAssessment Assess(
+        MediaKind mediaKind,
+        EpisodeExtractionResult episode,
+        TitleExtractionResult title,
+        DomainClassificationResult domain)
+    {
+        ArgumentNullException.ThrowIfNull(episode);
+        ArgumentNullException.ThrowIfNull(title);
+        ArgumentNullException.ThrowIfNull(domain);
+
+        var evidence = new List<RecognitionEvidence>();
+        var score = BaseScore(mediaKind, episode, title, domain, evidence);
+        var isAmbiguous = false;
+
+        ApplyTitleConsensus(title, ref score, ref isAmbiguous, evidence);
+        ApplyStructuralConflicts(mediaKind, episode, domain, ref score, ref isAmbiguous, evidence);
+        ApplyEvidencePenalties(episode, ref score, ref isAmbiguous, evidence);
+
+        score = Math.Clamp(score, 0.0, 0.99);
+        var level = ToLevel(score);
+
+        evidence.Add(new RecognitionEvidence(
+            "confidence.final",
+            score.ToString("0.000", CultureInfo.InvariantCulture),
+            score));
+
+        return new ConfidenceAssessment(
+            score,
+            level,
+            isAmbiguous,
+            evidence);
+    }
+
+    private static double BaseScore(
+        MediaKind mediaKind,
+        EpisodeExtractionResult episode,
+        TitleExtractionResult title,
+        DomainClassificationResult domain,
+        ICollection<RecognitionEvidence> evidence)
+    {
+        var titleScore = title.Title is null ? 0.0 : title.Confidence;
+        var episodeScore = episode.EpisodeNumber is null ? 0.0 : episode.Confidence;
+        var domainScore = domain.MediaKind == MediaKind.Unknown ? 0.0 : domain.Confidence;
+
+        if (titleScore > 0)
+        {
+            evidence.Add(new RecognitionEvidence(
+                "confidence.component.title",
+                titleScore.ToString("0.000", CultureInfo.InvariantCulture),
+                titleScore));
+        }
+
+        if (episodeScore > 0)
+        {
+            evidence.Add(new RecognitionEvidence(
+                "confidence.component.episode",
+                episodeScore.ToString("0.000", CultureInfo.InvariantCulture),
+                episodeScore));
+        }
+
+        if (domainScore > 0)
+        {
+            evidence.Add(new RecognitionEvidence(
+                "confidence.component.domain",
+                domainScore.ToString("0.000", CultureInfo.InvariantCulture),
+                domainScore));
+        }
+
+        return mediaKind switch
+        {
+            MediaKind.SeriesEpisode => ScoreSeries(
+                episodeScore,
+                titleScore,
+                domainScore,
+                domain.IsFinalEpisode || domain.EpisodePart != EpisodePart.None),
+
+            MediaKind.Special => ScoreDomainItem(
+                domainScore,
+                titleScore),
+
+            MediaKind.Movie => ScoreDomainItem(
+                domainScore,
+                titleScore),
+
+            _ => titleScore > 0
+                ? Math.Min(0.58, titleScore * 0.72)
+                : 0.0,
+        };
+    }
+
+    private static double ScoreSeries(
+        double episodeScore,
+        double titleScore,
+        double domainScore,
+        bool hasDomainEpisodeSemantics)
+    {
+        if (episodeScore > 0 && titleScore > 0)
+        {
+            return episodeScore * 0.58 + titleScore * 0.42;
+        }
+
+        if (hasDomainEpisodeSemantics && domainScore > 0 && titleScore > 0)
+        {
+            return domainScore * 0.55 + titleScore * 0.45;
+        }
+
+        if (episodeScore > 0)
+        {
+            return episodeScore * 0.76;
+        }
+
+        if (hasDomainEpisodeSemantics && domainScore > 0)
+        {
+            return domainScore * 0.72;
+        }
+
+        return 0.0;
+    }
+
+    private static double ScoreDomainItem(
+        double domainScore,
+        double titleScore)
+    {
+        if (domainScore > 0 && titleScore > 0)
+        {
+            return domainScore * 0.58 + titleScore * 0.42;
+        }
+
+        if (domainScore > 0)
+        {
+            return domainScore * 0.78;
+        }
+
+        return 0.0;
+    }
+
+    private static void ApplyTitleConsensus(
+        TitleExtractionResult title,
+        ref double score,
+        ref bool isAmbiguous,
+        ICollection<RecognitionEvidence> evidence)
+    {
+        if (title.Candidates.Count < 2)
+        {
+            return;
+        }
+
+        var first = title.Candidates[0];
+        var second = title.Candidates[1];
+
+        if (string.Equals(first.Title, second.Title, StringComparison.Ordinal))
+        {
+            score += 0.03;
+            evidence.Add(new RecognitionEvidence(
+                "confidence.title-consensus",
+                first.Title,
+                0.03));
+            return;
+        }
+
+        var delta = Math.Abs(first.Confidence - second.Confidence);
+        if (delta <= 0.07)
+        {
+            score -= 0.07;
+            isAmbiguous = true;
+            evidence.Add(new RecognitionEvidence(
+                "confidence.title-ambiguity",
+                $"{first.Title} | {second.Title}",
+                -0.07));
+        }
+    }
+
+    private static void ApplyStructuralConflicts(
+        MediaKind mediaKind,
+        EpisodeExtractionResult episode,
+        DomainClassificationResult domain,
+        ref double score,
+        ref bool isAmbiguous,
+        ICollection<RecognitionEvidence> evidence)
+    {
+        if (mediaKind is not (MediaKind.Special or MediaKind.Movie) ||
+            episode.EpisodeNumber is null)
+        {
+            return;
+        }
+
+        var onlyBareEpisode = episode.Evidence.Count > 0 &&
+                              episode.Evidence.All(static item =>
+                                  item.Code == "episode.bare-filename" ||
+                                  item.Code.StartsWith("season.directory", StringComparison.Ordinal) ||
+                                  item.Code == "cour.directory");
+
+        if (onlyBareEpisode)
+        {
+            return;
+        }
+
+        score -= 0.12;
+        isAmbiguous = true;
+        evidence.Add(new RecognitionEvidence(
+            "confidence.domain-episode-conflict",
+            mediaKind.ToString(),
+            -0.12));
+    }
+
+    private static void ApplyEvidencePenalties(
+        EpisodeExtractionResult episode,
+        ref double score,
+        ref bool isAmbiguous,
+        ICollection<RecognitionEvidence> evidence)
+    {
+        if (episode.Evidence.Any(static item =>
+            item.Code == "season.directory.conflict"))
+        {
+            score -= 0.08;
+            isAmbiguous = true;
+            evidence.Add(new RecognitionEvidence(
+                "confidence.season-conflict",
+                null,
+                -0.08));
+        }
+    }
+
+    private static RecognitionConfidenceLevel ToLevel(double score)
+    {
+        if (score <= 0.0)
+        {
+            return RecognitionConfidenceLevel.None;
+        }
+
+        if (score >= HighThreshold)
+        {
+            return RecognitionConfidenceLevel.High;
+        }
+
+        if (score >= MediumThreshold)
+        {
+            return RecognitionConfidenceLevel.Medium;
+        }
+
+        return RecognitionConfidenceLevel.Low;
+    }
+}
