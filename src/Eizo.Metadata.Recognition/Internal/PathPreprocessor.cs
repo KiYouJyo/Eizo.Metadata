@@ -89,6 +89,15 @@ internal static class PathPreprocessor
                     index = closeIndex + 1;
                     continue;
                 }
+
+                // Malformed input must always make progress. Preserve the unmatched
+                // opening bracket as ordinary text rather than consuming the suffix.
+                tokens.Add(CreateToken(
+                    TokenKind.Text,
+                    stem[index].ToString(),
+                    index));
+                index++;
+                continue;
             }
 
             if (IsHardSeparator(stem[index]))
