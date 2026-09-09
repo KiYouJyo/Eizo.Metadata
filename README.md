@@ -72,7 +72,7 @@ dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 
 ## Status
 
-**Recognition Stage 4 — anime and Japanese-drama specialization.**
+**Recognition Stage 5 — calibrated confidence and explainability.**
 
 Implemented so far:
 
@@ -89,10 +89,14 @@ Implemented so far:
 - collision protection for title text such as `SPY x FAMILY`, `Special Ops`,
   `Movie Night` and `OVA Project`;
 - deterministic evidence output with no network or disk dependency;
-- Windows/Linux CI, package validation and **912 passing tests**;
-- a **500-case sanitized Stage 4 domain corpus**.
+- Windows/Linux CI, package validation and **923 passing tests**;
+- a **500-case sanitized Stage 4 domain corpus**;
+- calibrated `Confidence` plus `RecognitionConfidenceLevel`;
+- explicit `IsAmbiguous` output for conflicting evidence;
+- ranked, deduplicated public title candidates for Metadata Provider search;
+- confidence evidence for title/episode/domain components, consensus and conflicts.
 
-Candidate scoring calibration and explainability are the next stage.
+Corpus hardening and performance validation are the next stage.
 
 See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
 plan and acceptance criteria.
