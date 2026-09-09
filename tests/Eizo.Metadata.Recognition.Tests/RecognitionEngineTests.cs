@@ -11,22 +11,35 @@ public sealed class RecognitionEngineTests
             new RecognitionRequest("Drama/Season 01/ドラマ 2023 第03話 1080p.mkv"));
 
         Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal("ドラマ", result.Title);
         Assert.Equal(1, result.SeasonNumber);
         Assert.Equal(3m, result.EpisodeNumber);
         Assert.Equal(2023, result.Year);
-        Assert.Null(result.Title);
         Assert.InRange(result.Confidence, 0.0, 1.0);
     }
 
     [Fact]
-    public void Recognize_NonEpisodeTechnicalNameRemainsUnknown()
+    public void Recognize_NonEpisodeTechnicalNameKeepsUsefulTitle()
     {
         var result = _engine.Recognize(
             new RecognitionRequest("Movie.2026.1080p.WEB-DL.x265.AAC.mkv"));
 
         Assert.Equal(MediaKind.Unknown, result.MediaKind);
+        Assert.Equal("Movie", result.Title);
         Assert.Null(result.EpisodeNumber);
         Assert.Equal(2026, result.Year);
+    }
+
+    [Fact]
+    public void Recognize_UsesParentTitleForNumericEpisodeFile()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest("Anime/葬送のフリーレン/Season 01/03.mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal("葬送のフリーレン", result.Title);
+        Assert.Equal(1, result.SeasonNumber);
+        Assert.Equal(3m, result.EpisodeNumber);
     }
 
     [Fact]
