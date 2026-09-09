@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Eizo.Metadata.slnx
+
+      - name: Verify dependency boundary
+        shell: pwsh
+        run: ./eng/verify-boundaries.ps1
+
+      - name: Build
+        run: dotnet build Eizo.Metadata.slnx --configuration Release --no-restore
+
+      - name: Test
+        timeout-minutes: 5
+        run: dotnet test Eizo.Metadata.slnx --configuration Release --no-build
+
+  pack:
+    needs: build-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Eizo.Metadata.slnx
+
+      - name: Pack
+        run: dotnet pack src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj --configuration Release --output artifacts/packages
+
+      - name: Verify package set
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem artifacts/packages/*.nupkg)
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one NuGet package, found $($packages.Count)."
+          }
+
+          if ($packages[0].Name -ne 'Eizo.Metadata.Recognition.0.1.0.nupkg') {
+            throw "Unexpected package name: $($packages[0].Name)"
+          }
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizo-metadata-recognition-nuget-${{ github.sha }}
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
