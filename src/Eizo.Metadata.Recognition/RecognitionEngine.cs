@@ -13,35 +13,108 @@ public sealed class RecognitionEngine : IRecognitionEngine
 
         var path = PathPreprocessor.Preprocess(request.Path);
         var episode = EpisodeExtractor.Extract(path);
-        var title = TitleExtractor.Extract(path, episode);
+        var domain = DomainClassifier.Classify(path);
+        var title = TitleExtractor.Extract(path, episode, domain);
 
         var evidence = new List<RecognitionEvidence>(episode.Evidence);
+        evidence.AddRange(domain.Evidence);
         evidence.AddRange(title.Evidence);
 
         var year = TryGetYear(path, evidence);
-        var confidence = CombineConfidence(episode, title);
+        var mediaKind = ResolveMediaKind(episode, domain);
+
+        var episodeNumber = episode.EpisodeNumber;
+        var episodeEndNumber = episode.EpisodeEndNumber;
+        var specialNumber = domain.SpecialNumber;
+
+        if (mediaKind == MediaKind.Special)
+        {
+            if (specialNumber is null &&
+                episodeNumber is not null &&
+                episode.Evidence.Any(static item => item.Code == "episode.bare-filename"))
+            {
+                specialNumber = episodeNumber;
+                evidence.Add(new RecognitionEvidence(
+                    "special.number.from-bare-filename",
+                    episodeNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    0.70));
+            }
+
+            episodeNumber = null;
+            episodeEndNumber = null;
+        }
+        else if (mediaKind == MediaKind.Movie)
+        {
+            episodeNumber = null;
+            episodeEndNumber = null;
+        }
+
+        var confidence = CombineConfidence(
+            episode,
+            title,
+            domain,
+            mediaKind);
 
         return new RecognitionResult(
-            episode.EpisodeNumber is null ? MediaKind.Unknown : MediaKind.SeriesEpisode,
+            mediaKind,
+            domain.SpecialKind,
+            domain.EpisodePart,
+            domain.IsFinalEpisode,
             title.Title,
             episode.SeasonNumber,
-            episode.EpisodeNumber,
-            episode.EpisodeEndNumber,
+            episode.CourNumber,
+            episodeNumber,
+            episodeEndNumber,
+            specialNumber,
             year,
             confidence,
             evidence);
     }
 
-    private static double CombineConfidence(
+    private static MediaKind ResolveMediaKind(
         EpisodeExtractionResult episode,
-        TitleExtractionResult title)
+        DomainClassificationResult domain)
     {
-        if (episode.EpisodeNumber is not null && title.Title is not null)
+        if (domain.MediaKind != MediaKind.Unknown)
         {
-            return Math.Min(episode.Confidence, title.Confidence);
+            return domain.MediaKind;
         }
 
-        return Math.Max(episode.Confidence, title.Confidence);
+        return episode.EpisodeNumber is null
+            ? MediaKind.Unknown
+            : MediaKind.SeriesEpisode;
+    }
+
+    private static double CombineConfidence(
+        EpisodeExtractionResult episode,
+        TitleExtractionResult title,
+        DomainClassificationResult domain,
+        MediaKind mediaKind)
+    {
+        var values = new List<double>();
+
+        if (title.Title is not null)
+        {
+            values.Add(title.Confidence);
+        }
+
+        if (domain.MediaKind != MediaKind.Unknown)
+        {
+            values.Add(domain.Confidence);
+        }
+
+        if (episode.EpisodeNumber is not null &&
+            mediaKind == MediaKind.SeriesEpisode)
+        {
+            values.Add(episode.Confidence);
+        }
+
+        if (values.Count == 0)
+        {
+            return 0.0;
+        }
+
+        return values.Min();
     }
 
     private static int? TryGetYear(

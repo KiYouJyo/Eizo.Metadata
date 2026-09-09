@@ -25,7 +25,7 @@ internal static class TitleExtractor
             Options,
             RegexTimeout),
         new(
-            @"第\s*\d{1,3}(?:\.\d+)?\s*話",
+            @"第\s*\d{1,3}(?:\.\d+)?\s*(?:話|回)(?:\s*[「『].*?[」』]|\s+[^[(【]+)?",
             Options,
             RegexTimeout),
         new(
@@ -33,6 +33,39 @@ internal static class TitleExtractor
             Options,
             RegexTimeout),
     };
+
+    private static readonly Regex[] DomainMarkerPatterns =
+    {
+        new(
+            @"(?<![A-Za-z0-9])(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?(?=\s*(?:$|\[|\(|【|\]|\)|】))",
+            Options,
+            RegexTimeout),
+        new(
+            @"(?:^|[\s._-])(?:スペシャル|特別編|総集編)(?=\s*(?:$|\[|\(|【))",
+            Options,
+            RegexTimeout),
+        new(
+            @"(?:^劇場版|^映画[\s　]+|[\s._-](?:劇場版|映画)(?=\s*(?:$|\[|\(|【)))",
+            Options,
+            RegexTimeout),
+        new(
+            @"(?:^MOVIE(?=\s*[-:])|[\s._-]MOVIE(?=\s*(?:$|\[|\(|【)))",
+            Options,
+            RegexTimeout),
+        new(
+            @"(?:最終話|最終回)(?:\s*[「『].*?[」』]|\s+[^[(【]+)?",
+            Options,
+            RegexTimeout),
+        new(
+            @"(?:前編|前篇|後編|後篇)(?:\s*[「『].*?[」』])?",
+            Options,
+            RegexTimeout),
+    };
+
+    private static readonly Regex DomainOnlyNameRegex = new(
+        @"^\s*(?:(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?|スペシャル|特別編|総集編|劇場版|MOVIE)\s*$",
+        Options,
+        RegexTimeout);
 
     private static readonly Regex PureEpisodeRegex = new(
         @"^\s*\d{1,3}(?:\.\d+)?\s*$",
@@ -62,13 +95,15 @@ internal static class TitleExtractor
     private static readonly HashSet<string> GenericDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "ANIME", "ANIMES", "TV", "TV SERIES", "SERIES", "DRAMA", "DRAMAS",
-        "JDRAMA", "J-DRAMA", "MOVIES", "VIDEO", "VIDEOS", "MEDIA",
-        "DOWNLOAD", "DOWNLOADS", "WEBDAV",
+        "JDRAMA", "J-DRAMA", "MOVIE", "MOVIES", "VIDEO", "VIDEOS", "MEDIA",
+        "DOWNLOAD", "DOWNLOADS", "WEBDAV", "OVA", "OAD", "ONA", "SP",
+        "SPECIAL", "SPECIALS", "NCOP", "NCED", "劇場版",
     };
 
     internal static TitleExtractionResult Extract(
         NormalizedMediaPath path,
-        EpisodeExtractionResult episode)
+        EpisodeExtractionResult episode,
+        DomainClassificationResult? domain = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(episode);
@@ -76,7 +111,7 @@ internal static class TitleExtractor
         var candidates = new List<TitleCandidate>();
         var evidence = new List<RecognitionEvidence>();
 
-        var fileCandidate = ExtractFileCandidate(path, episode);
+        var fileCandidate = ExtractFileCandidate(path, episode, domain);
         if (fileCandidate is not null)
         {
             candidates.Add(fileCandidate);
@@ -118,7 +153,8 @@ internal static class TitleExtractor
 
     private static TitleCandidate? ExtractFileCandidate(
         NormalizedMediaPath path,
-        EpisodeExtractionResult episode)
+        EpisodeExtractionResult episode,
+        DomainClassificationResult? domain)
     {
         if (string.IsNullOrWhiteSpace(path.Stem))
         {
@@ -131,12 +167,25 @@ internal static class TitleExtractor
             return null;
         }
 
+        if (domain is not null &&
+            domain.MediaKind != MediaKind.Unknown &&
+            DomainOnlyNameRegex.IsMatch(path.NormalizedStem) &&
+            HasMeaningfulParent(path))
+        {
+            return null;
+        }
+
         var removal = new bool[path.Stem.Length];
 
         MarkNoiseTokens(path, removal);
         MarkEpisodeSyntax(path, removal);
         MarkLeadingReleaseGroupHeuristic(path, removal);
         MarkOptionalYear(path, removal);
+
+        if (domain is not null && domain.MediaKind != MediaKind.Unknown)
+        {
+            MarkDomainSyntax(path, removal);
+        }
 
         var title = Rebuild(path.Stem, removal);
         if (!IsUsefulTitle(title))
@@ -178,12 +227,14 @@ internal static class TitleExtractor
                 confidence,
                 priority));
             priority++;
-
-            // The nearest meaningful parent is the useful fallback. More distant
-            // directories are usually library/container names and create noise.
             break;
         }
     }
+
+    private static bool HasMeaningfulParent(NormalizedMediaPath path) =>
+        path.NormalizedDirectorySegments.Any(static value =>
+            !string.IsNullOrWhiteSpace(value) &&
+            !ShouldSkipDirectory(value.Trim()));
 
     private static void MarkNoiseTokens(
         NormalizedMediaPath path,
@@ -213,6 +264,26 @@ internal static class TitleExtractor
         }
     }
 
+    private static void MarkDomainSyntax(
+        NormalizedMediaPath path,
+        bool[] removal)
+    {
+        foreach (var regex in DomainMarkerPatterns)
+        {
+            foreach (Match match in regex.Matches(path.NormalizedStem))
+            {
+                var without = path.NormalizedStem.Remove(match.Index, match.Length);
+                var remainder = RemoveEpisodeAndTechnicalText(without);
+                if (!HasLetterOrCjk(remainder))
+                {
+                    continue;
+                }
+
+                Mark(removal, match.Index, match.Length);
+            }
+        }
+    }
+
     private static void MarkLeadingReleaseGroupHeuristic(
         NormalizedMediaPath path,
         bool[] removal)
@@ -232,9 +303,6 @@ internal static class TitleExtractor
             return;
         }
 
-        // Do not strip a bracketed title when it is the only meaningful title text,
-        // e.g. "[Oshi no Ko] - 01". Strip only when meaningful lexical material
-        // follows the prefix before the episode syntax.
         var remainingStart = first.Start + first.Length;
         if (remainingStart >= path.Stem.Length)
         {
