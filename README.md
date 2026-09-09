@@ -72,24 +72,27 @@ dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 
 ## Status
 
-**Recognition Stage 3 — title candidate extraction.**
+**Recognition Stage 4 — anime and Japanese-drama specialization.**
 
 Implemented so far:
 
 - provider-neutral Recognition contracts and default `RecognitionEngine`;
-- Unicode-safe logical path preprocessing and release-noise tokenization;
-- season/episode parsing for common series, anime and Japanese-drama syntax;
-- episode ranges and decimal episode numbers;
-- season/cour directory context;
-- collision protection for years, resolutions and common technical-number tokens;
+- Unicode-safe path preprocessing and release-noise tokenization;
+- season/episode/range/decimal parsing;
+- filename and parent-directory title candidates;
+- public season and cour context;
+- OVA / OAD / ONA / SP / Specials / NCOP / NCED classification;
+- special numbering without treating specials as ordinary episodes;
+- Japanese/English movie marker classification;
+- Japanese `第N話` / `第N回`, `最終話`, `前編`, `後編`;
+- appended Japanese episode-name cleanup;
+- collision protection for title text such as `SPY x FAMILY`, `Special Ops`,
+  `Movie Night` and `OVA Project`;
 - deterministic evidence output with no network or disk dependency;
-- filename title candidates with technical/release-noise removal;
-- parent-directory fallback for episode-only filenames;
-- protection for meaningful numeric and bracketed titles;
-- deterministic candidate ranking and title evidence;
-- Windows/Linux CI, package validation, 389 tests and sanitized Stage 1/Stage 3 corpora.
+- Windows/Linux CI, package validation and **912 passing tests**;
+- a **500-case sanitized Stage 4 domain corpus**.
 
-Anime/J-drama specialization is the next stage.
+Candidate scoring calibration and explainability are the next stage.
 
 See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
 plan and acceptance criteria.

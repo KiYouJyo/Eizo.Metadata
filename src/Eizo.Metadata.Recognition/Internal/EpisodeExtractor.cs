@@ -26,7 +26,7 @@ internal static class EpisodeExtractor
         RegexTimeout);
 
     private static readonly Regex JapaneseEpisodeRegex = new(
-        @"第\s*(?<episode>\d{1,3}(?:\.\d+)?)\s*話",
+        @"第\s*(?<episode>\d{1,3}(?:\.\d+)?)\s*(?:話|回)",
         Options,
         RegexTimeout);
 
@@ -46,7 +46,7 @@ internal static class EpisodeExtractor
         RegexTimeout);
 
     private static readonly Regex JapaneseSeasonDirectoryRegex = new(
-        @"第\s*0?(?<season>\d{1,2})\s*(?:期|シーズン)",
+        @"第\s*0?(?<season>\d{1,2})\s*(?:期|シーズン|シリーズ)",
         Options,
         RegexTimeout);
 
@@ -75,7 +75,7 @@ internal static class EpisodeExtractor
             MatchPattern(SeasonEpisodeRegex, stem, "episode.sxxexx", 0.98) ??
             MatchPattern(OneXEpisodeRegex, stem, "episode.onex", 0.96) ??
             MatchPattern(PrefixedEpisodeRegex, stem, "episode.prefixed", 0.95) ??
-            MatchPattern(JapaneseEpisodeRegex, stem, "episode.japanese-wa", 0.95) ??
+            MatchPattern(JapaneseEpisodeRegex, stem, "episode.japanese-numbered", 0.95) ??
             MatchBare(DashEpisodeRegex, stem, "episode.bare-delimited", 0.80) ??
             MatchBare(PureEpisodeRegex, stem, "episode.bare-filename", 0.66) ??
             EpisodeExtractionResult.Empty;

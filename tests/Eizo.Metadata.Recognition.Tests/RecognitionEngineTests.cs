@@ -43,6 +43,16 @@ public sealed class RecognitionEngineTests
     }
 
     [Fact]
+    public void Recognize_ExposesCourContext()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest("Anime/Example/Cour 2/03.mkv"));
+
+        Assert.Equal(2, result.CourNumber);
+        Assert.Equal(3m, result.EpisodeNumber);
+    }
+
+    [Fact]
     public void Recognize_IsDeterministic()
     {
         var request = new RecognitionRequest(
@@ -52,10 +62,15 @@ public sealed class RecognitionEngineTests
         var second = _engine.Recognize(request);
 
         Assert.Equal(first.MediaKind, second.MediaKind);
+        Assert.Equal(first.SpecialKind, second.SpecialKind);
+        Assert.Equal(first.EpisodePart, second.EpisodePart);
+        Assert.Equal(first.IsFinalEpisode, second.IsFinalEpisode);
         Assert.Equal(first.Title, second.Title);
         Assert.Equal(first.SeasonNumber, second.SeasonNumber);
+        Assert.Equal(first.CourNumber, second.CourNumber);
         Assert.Equal(first.EpisodeNumber, second.EpisodeNumber);
         Assert.Equal(first.EpisodeEndNumber, second.EpisodeEndNumber);
+        Assert.Equal(first.SpecialNumber, second.SpecialNumber);
         Assert.Equal(first.Year, second.Year);
         Assert.Equal(first.Confidence, second.Confidence);
         Assert.Equal(first.Evidence.Count, second.Evidence.Count);

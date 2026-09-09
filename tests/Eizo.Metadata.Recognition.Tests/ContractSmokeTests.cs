@@ -22,15 +22,21 @@ public sealed class ContractSmokeTests
 
         var result = new RecognitionResult(
             MediaKind.SeriesEpisode,
+            SpecialKind.None,
+            EpisodePart.None,
+            IsFinalEpisode: false,
             "葬送のフリーレン",
             1,
+            CourNumber: null,
             14m,
-            null,
+            EpisodeEndNumber: null,
+            SpecialNumber: null,
             2023,
             0.92,
             evidence);
 
         Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(SpecialKind.None, result.SpecialKind);
         Assert.Equal("葬送のフリーレン", result.Title);
         Assert.Equal(14m, result.EpisodeNumber);
         Assert.Single(result.Evidence);

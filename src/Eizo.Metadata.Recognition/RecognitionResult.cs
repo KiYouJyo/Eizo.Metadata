@@ -5,10 +5,15 @@ namespace Eizo.Metadata.Recognition;
 /// </summary>
 public sealed record RecognitionResult(
     MediaKind MediaKind,
+    SpecialKind SpecialKind,
+    EpisodePart EpisodePart,
+    bool IsFinalEpisode,
     string? Title,
     int? SeasonNumber,
+    int? CourNumber,
     decimal? EpisodeNumber,
     decimal? EpisodeEndNumber,
+    decimal? SpecialNumber,
     int? Year,
     double Confidence,
     IReadOnlyList<RecognitionEvidence> Evidence);
