@@ -137,7 +137,12 @@ Exit gate:
 
 ## Stage 4 — Anime and Japanese-drama specialization
 
-Add the domain rules that justify Eizo having its own recognizer.
+Status: **implemented and CI-verified**.
+
+Recognition now exposes provider-neutral domain semantics for anime extras, movie
+markers, cour context, and Japanese-drama episode forms. Specials carry their own
+subtype/number rather than being silently represented as ordinary episodes.
+
 
 Anime scope:
 
@@ -157,9 +162,11 @@ Japanese-drama scope:
 
 Exit gate:
 
-- a sanitized golden corpus reaches at least 500 cases;
+- the sanitized Stage 4 golden corpus contains 500 cases;
 - anime and Japanese-drama cases are both represented as first-class categories;
-- specials are not silently treated as ordinary numbered episodes.
+- specials are not silently treated as ordinary numbered episodes;
+- public results expose SpecialKind, SpecialNumber, EpisodePart, IsFinalEpisode and CourNumber;
+- the full suite reaches 912 passing tests on Windows and Linux.
 
 ---
 
