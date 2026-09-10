@@ -42,16 +42,33 @@ jobs:
           $version = '0.1.1'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
-          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
+          New-Item -ItemType Directory -Force -Path $bin,$buildRoot | Out-Null
 
-          # Recognition is the first Metadata module. Provider projects are intentionally
-          # packaged into this same runtime as they are introduced, so Recognition and
-          # Metadata Providers always advance as one compatibility-tested unit.
-          dotnet build src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj --configuration Release --no-restore --output $bin
-          if ($LASTEXITCODE -ne 0) { throw "Metadata runtime build failed: $LASTEXITCODE" }
+          # Every product module under src/Eizo.Metadata.* shares one update boundary.
+          # Recognition remains usable offline; provider availability never controls
+          # whether the Recognition assembly can load.
+          $projects = @(Get-ChildItem 'src' -Directory | ForEach-Object {
+            Get-ChildItem $_.FullName -Filter 'Eizo.Metadata.*.csproj' -File
+          } | Sort-Object FullName)
+          if ($projects.Count -eq 0) { throw 'No Eizo.Metadata runtime projects were found.' }
+
+          foreach ($project in $projects) {
+            $moduleOutput = Join-Path $buildRoot $project.BaseName
+            New-Item -ItemType Directory -Force -Path $moduleOutput | Out-Null
+            dotnet build $project.FullName --configuration Release --no-restore --output $moduleOutput
+            if ($LASTEXITCODE -ne 0) { throw "Metadata module build failed: $($project.FullName)" }
+            Get-ChildItem $moduleOutput -File -Filter '*.dll' | ForEach-Object {
+              Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $bin $_.Name) -Force
+            }
+          }
 
           $anchor = Join-Path $bin 'Eizo.Metadata.Recognition.dll'
           if (-not (Test-Path $anchor)) { throw 'Metadata Recognition anchor assembly was not produced.' }
+          $modules = @(Get-ChildItem $bin -File -Filter 'Eizo.Metadata*.dll' |
+            ForEach-Object BaseName | Sort-Object -Unique)
+          if ($modules -notcontains 'Eizo.Metadata.Recognition') { throw 'Recognition module is missing from Metadata runtime.' }
+
           $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($anchor).Version
           $abiVersion = "{0}.{1}.{2}" -f $assemblyVersion.Major, $assemblyVersion.Minor, [Math]::Max(0, $assemblyVersion.Build)
 
@@ -67,7 +84,7 @@ jobs:
             runtime = 'x64'
             framework = 'net10.0'
             sourceRepository = 'KiYouJyo/Eizo.Metadata'
-            modules = @('Eizo.Metadata.Recognition')
+            modules = $modules
             hostContract = [ordered]@{
               name = 'Eizo.Recognition.Host'
               minVersion = '1.0.0'
@@ -77,8 +94,8 @@ jobs:
           $manifestPath = Join-Path $root 'eizo-recognition-release.json'
           $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
-          # Keep 0.3.6 technical asset names stable. Future host-contract revisions can
-          # migrate the internal identity without breaking already-installed 0.3.6 hosts.
+          # Keep Eizo 0.3.6 technical asset names stable. Later host-contract revisions
+          # can migrate the internal identity without breaking installed 0.3.6 hosts.
           $zip = Join-Path $env:RUNNER_TEMP "Eizo.Recognition.Runtime-v$version-x64.zip"
           Compress-Archive -Path (Join-Path $root '*') -DestinationPath $zip -CompressionLevel Optimal
 
@@ -87,11 +104,14 @@ jobs:
           foreach ($required in @('eizo-recognition-release.json', 'bin/Eizo.Metadata.Recognition.dll')) {
             if (-not (Test-Path (Join-Path $extract $required))) { throw "Runtime archive missing: $required" }
           }
+          foreach ($module in $modules) {
+            if (-not (Test-Path (Join-Path $extract "bin/$module.dll"))) { throw "Metadata module missing from archive: $module" }
+          }
 
           Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $env:RUNNER_TEMP 'eizo-recognition-release.json') -Force
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $(Split-Path $zip -Leaf)" | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'SHA256SUMS.txt') -Encoding ascii
-          Write-Host "Unified Metadata runtime package PASS: $zip; ABI=$abiVersion"
+          Write-Host "Unified Metadata runtime package PASS: modules=$($modules -join ', '); ABI=$abiVersion"
 
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
