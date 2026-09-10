@@ -21,11 +21,17 @@ especially years, resolutions, bit depth, codec versions and release-group names
 
 ### 2. Golden corpus
 
-A versioned, sanitized JSONL corpus will store input paths and expected structured
-outputs. It should be readable without network access and runnable in normal CI.
+Versioned, sanitized JSONL corpora store input paths and expected structured outputs.
+They are readable without network access and run in normal CI.
 
-Initial target after Stage 4: at least 500 curated cases.
-Stage 6 target: at least 2,000 cases with anime and Japanese drama heavily represented.
+Current Stage 6 datasets:
+
+- `stage6-golden.jsonl`: 2,000 positive cases; current structured-output coverage 2,000/2,000;
+- `stage6-negative.jsonl`: 400 non-episode/domain cases; current structural false-positive
+  baseline 0/400.
+
+Positive extraction coverage and structural false-positive rate are deliberately tracked
+separately so increasing recall cannot silently hide a precision regression.
 
 ### 3. Regression cases
 
@@ -34,16 +40,22 @@ regression case before the fix is merged.
 
 ### 4. Robustness
 
-Property/fuzz-style tests should cover unusual Unicode, repeated separators, empty
-segments, very long names and malformed brackets. Recognition should not throw on
-arbitrary valid .NET strings.
+Property/fuzz-style tests cover unusual Unicode, repeated separators, very long names,
+malformed brackets, combining marks, full-width forms, emoji and mixed-script paths.
+Stage 6 adds 1,000 deterministic seeded fuzz paths plus adversarial long-input cases.
+Recognition should not throw on these valid Unicode inputs, and repeat recognition must
+remain deterministic.
 
 ### 5. Performance
 
-Recognition is expected to be cheap enough for library scans. Stage 6 will add a
-repeatable benchmark corpus and guard against accidental regex backtracking or
-quadratic behavior. Performance gates should be based on measured CI baselines rather
-than guessed microsecond targets.
+Recognition is expected to be cheap enough for library scans. Stage 6 includes a
+dependency-free benchmark harness that measures 1K, 10K and 100K representative paths,
+recording elapsed time, throughput, allocation and a checksum.
+
+The first GitHub `ubuntu-latest` / .NET 10 baseline is documented in
+[recognition-performance.md](recognition-performance.md). CI uploads the raw Markdown and
+JSON benchmark results for each run. Performance gates should be based on repeated
+measured baselines rather than guessed microsecond targets.
 
 ## Privacy
 
