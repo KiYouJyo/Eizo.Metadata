@@ -103,7 +103,8 @@ internal static class TitleExtractor
     internal static TitleExtractionResult Extract(
         NormalizedMediaPath path,
         EpisodeExtractionResult episode,
-        DomainClassificationResult? domain = null)
+        DomainClassificationResult? domain = null,
+        EpisodeTitleExtractionResult? episodeTitle = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(episode);
@@ -111,7 +112,7 @@ internal static class TitleExtractor
         var candidates = new List<TitleCandidate>();
         var evidence = new List<RecognitionEvidence>();
 
-        var fileCandidate = ExtractFileCandidate(path, episode, domain);
+        var fileCandidate = ExtractFileCandidate(path, episode, domain, episodeTitle);
         if (fileCandidate is not null)
         {
             candidates.Add(fileCandidate);
@@ -154,7 +155,8 @@ internal static class TitleExtractor
     private static TitleCandidate? ExtractFileCandidate(
         NormalizedMediaPath path,
         EpisodeExtractionResult episode,
-        DomainClassificationResult? domain)
+        DomainClassificationResult? domain,
+        EpisodeTitleExtractionResult? episodeTitle)
     {
         if (string.IsNullOrWhiteSpace(path.Stem))
         {
@@ -165,6 +167,24 @@ internal static class TitleExtractor
             PureEpisodeRegex.IsMatch(path.NormalizedStem))
         {
             return null;
+        }
+
+        if (episodeTitle?.SeriesTitle is { Length: > 0 } seriesTitle)
+        {
+            return new TitleCandidate(
+                seriesTitle,
+                "filename-episode-title",
+                episodeTitle.Confidence,
+                SourcePriority: 0);
+        }
+
+        if (BracketSequenceAnalyzer.TryAnalyze(path, out var bracketSequence))
+        {
+            return new TitleCandidate(
+                bracketSequence.TitleToken.NormalizedValue,
+                "bracket-sequence",
+                bracketSequence.Confidence,
+                SourcePriority: 0);
         }
 
         if (domain is not null &&

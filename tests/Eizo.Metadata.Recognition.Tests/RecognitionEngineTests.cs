@@ -66,6 +66,7 @@ public sealed class RecognitionEngineTests
         Assert.Equal(first.EpisodePart, second.EpisodePart);
         Assert.Equal(first.IsFinalEpisode, second.IsFinalEpisode);
         Assert.Equal(first.Title, second.Title);
+        Assert.Equal(first.EpisodeTitle, second.EpisodeTitle);
         Assert.Equal(first.SeasonNumber, second.SeasonNumber);
         Assert.Equal(first.CourNumber, second.CourNumber);
         Assert.Equal(first.EpisodeNumber, second.EpisodeNumber);

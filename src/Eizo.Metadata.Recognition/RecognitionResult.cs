@@ -19,4 +19,10 @@ public sealed record RecognitionResult(
     double Confidence,
     RecognitionConfidenceLevel ConfidenceLevel,
     bool IsAmbiguous,
-    IReadOnlyList<RecognitionEvidence> Evidence);
+    IReadOnlyList<RecognitionEvidence> Evidence)
+{
+    /// <summary>
+    /// Optional episode-level title extracted independently from the series title.
+    /// </summary>
+    public string? EpisodeTitle { get; init; }
+}
