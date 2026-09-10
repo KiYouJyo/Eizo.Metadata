@@ -49,11 +49,13 @@ public sealed class RecognitionEngine : IRecognitionEngine
             episodeEndNumber = null;
         }
 
-        var confidence = CombineConfidence(
+        var confidence = ConfidenceScorer.Assess(
+            mediaKind,
             episode,
             title,
-            domain,
-            mediaKind);
+            domain);
+
+        evidence.AddRange(confidence.Evidence);
 
         return new RecognitionResult(
             mediaKind,
@@ -61,14 +63,45 @@ public sealed class RecognitionEngine : IRecognitionEngine
             domain.EpisodePart,
             domain.IsFinalEpisode,
             title.Title,
+            ToPublicTitleCandidates(title),
             episode.SeasonNumber,
             episode.CourNumber,
             episodeNumber,
             episodeEndNumber,
             specialNumber,
             year,
-            confidence,
+            confidence.Score,
+            confidence.Level,
+            confidence.IsAmbiguous,
             evidence);
+    }
+
+    private static IReadOnlyList<RecognitionTitleCandidate> ToPublicTitleCandidates(
+        TitleExtractionResult title)
+    {
+        if (title.Candidates.Count == 0)
+        {
+            return Array.Empty<RecognitionTitleCandidate>();
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<RecognitionTitleCandidate>();
+
+        foreach (var candidate in title.Candidates)
+        {
+            if (!seen.Add(candidate.Title))
+            {
+                continue;
+            }
+
+            result.Add(new RecognitionTitleCandidate(
+                candidate.Title,
+                candidate.Confidence,
+                candidate.Source,
+                string.Equals(candidate.Title, title.Title, StringComparison.Ordinal)));
+        }
+
+        return result;
     }
 
     private static MediaKind ResolveMediaKind(
@@ -83,38 +116,6 @@ public sealed class RecognitionEngine : IRecognitionEngine
         return episode.EpisodeNumber is null
             ? MediaKind.Unknown
             : MediaKind.SeriesEpisode;
-    }
-
-    private static double CombineConfidence(
-        EpisodeExtractionResult episode,
-        TitleExtractionResult title,
-        DomainClassificationResult domain,
-        MediaKind mediaKind)
-    {
-        var values = new List<double>();
-
-        if (title.Title is not null)
-        {
-            values.Add(title.Confidence);
-        }
-
-        if (domain.MediaKind != MediaKind.Unknown)
-        {
-            values.Add(domain.Confidence);
-        }
-
-        if (episode.EpisodeNumber is not null &&
-            mediaKind == MediaKind.SeriesEpisode)
-        {
-            values.Add(episode.Confidence);
-        }
-
-        if (values.Count == 0)
-        {
-            return 0.0;
-        }
-
-        return values.Min();
     }
 
     private static int? TryGetYear(

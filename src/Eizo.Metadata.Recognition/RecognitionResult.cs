@@ -9,6 +9,7 @@ public sealed record RecognitionResult(
     EpisodePart EpisodePart,
     bool IsFinalEpisode,
     string? Title,
+    IReadOnlyList<RecognitionTitleCandidate> TitleCandidates,
     int? SeasonNumber,
     int? CourNumber,
     decimal? EpisodeNumber,
@@ -16,4 +17,6 @@ public sealed record RecognitionResult(
     decimal? SpecialNumber,
     int? Year,
     double Confidence,
+    RecognitionConfidenceLevel ConfidenceLevel,
+    bool IsAmbiguous,
     IReadOnlyList<RecognitionEvidence> Evidence);

@@ -172,7 +172,13 @@ Exit gate:
 
 ## Stage 5 — Candidate ranking, confidence and explainability
 
-Turn independent parser findings into a stable decision system.
+Status: **implemented and CI-verified**.
+
+Recognition now exposes calibrated numerical confidence, a coarse confidence level,
+explicit ambiguity, and ranked public title candidates. Confidence is derived from the
+semantic components required by the resolved media shape rather than from one parser
+signal alone.
+
 
 Scope:
 
@@ -195,9 +201,13 @@ special.ova-marker         +0.90
 
 Exit gate:
 
-- the same request always produces the same result and evidence order;
-- low-confidence inputs remain low confidence;
-- diagnostics are useful enough to debug a bad library match without provider logs.
+- the same request produces deterministic result fields and evidence order;
+- unresolved title-only inputs are capped at low confidence;
+- strong filename episode matches reach high confidence;
+- season/title/domain conflicts lower confidence and set IsAmbiguous;
+- public title candidates are ranked and deduplicated;
+- confidence component/final-score evidence makes bad matches diagnosable without provider logs;
+- the full suite reaches 923 passing tests on Windows and Linux.
 
 ---
 

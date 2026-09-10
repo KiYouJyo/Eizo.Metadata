@@ -15,6 +15,15 @@ public sealed class ContractSmokeTests
     [Fact]
     public void RecognitionResult_CanRepresentProviderNeutralEpisodeCandidate()
     {
+        var titleCandidates = new[]
+        {
+            new RecognitionTitleCandidate(
+                "葬送のフリーレン",
+                0.91,
+                "filename",
+                IsPrimary: true),
+        };
+
         var evidence = new[]
         {
             new RecognitionEvidence("episode.pattern", "14", 0.8),
@@ -26,6 +35,7 @@ public sealed class ContractSmokeTests
             EpisodePart.None,
             IsFinalEpisode: false,
             "葬送のフリーレン",
+            titleCandidates,
             1,
             CourNumber: null,
             14m,
@@ -33,12 +43,16 @@ public sealed class ContractSmokeTests
             SpecialNumber: null,
             2023,
             0.92,
+            RecognitionConfidenceLevel.High,
+            IsAmbiguous: false,
             evidence);
 
         Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
         Assert.Equal(SpecialKind.None, result.SpecialKind);
         Assert.Equal("葬送のフリーレン", result.Title);
         Assert.Equal(14m, result.EpisodeNumber);
+        Assert.Equal(RecognitionConfidenceLevel.High, result.ConfidenceLevel);
+        Assert.Single(result.TitleCandidates);
         Assert.Single(result.Evidence);
     }
 }
