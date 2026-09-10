@@ -45,11 +45,15 @@ public sealed class ContractSmokeTests
             0.92,
             RecognitionConfidenceLevel.High,
             IsAmbiguous: false,
-            evidence);
+            evidence)
+        {
+            EpisodeTitle = "旅立ち",
+        };
 
         Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
         Assert.Equal(SpecialKind.None, result.SpecialKind);
         Assert.Equal("葬送のフリーレン", result.Title);
+        Assert.Equal("旅立ち", result.EpisodeTitle);
         Assert.Equal(14m, result.EpisodeNumber);
         Assert.Equal(RecognitionConfidenceLevel.High, result.ConfidenceLevel);
         Assert.Single(result.TitleCandidates);

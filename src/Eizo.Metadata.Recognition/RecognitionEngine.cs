@@ -13,10 +13,12 @@ public sealed class RecognitionEngine : IRecognitionEngine
 
         var path = PathPreprocessor.Preprocess(request.Path);
         var episode = EpisodeExtractor.Extract(path);
+        var episodeTitle = EpisodeTitleExtractor.Extract(path, episode);
         var domain = DomainClassifier.Classify(path);
-        var title = TitleExtractor.Extract(path, episode, domain);
+        var title = TitleExtractor.Extract(path, episode, domain, episodeTitle);
 
         var evidence = new List<RecognitionEvidence>(episode.Evidence);
+        evidence.AddRange(episodeTitle.Evidence);
         evidence.AddRange(domain.Evidence);
         evidence.AddRange(title.Evidence);
 
@@ -73,7 +75,10 @@ public sealed class RecognitionEngine : IRecognitionEngine
             confidence.Score,
             confidence.Level,
             confidence.IsAmbiguous,
-            evidence);
+            evidence)
+        {
+            EpisodeTitle = episodeTitle.EpisodeTitle,
+        };
     }
 
     private static IReadOnlyList<RecognitionTitleCandidate> ToPublicTitleCandidates(

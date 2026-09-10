@@ -29,7 +29,7 @@ internal static class TokenClassifier
     private static readonly HashSet<string> ReleaseGroups = new(StringComparer.Ordinal)
     {
         "ANI", "LILITHRAWS", "NCRAWS", "LOLIHOUSE", "REINFORCE", "MOOZZI2",
-        "NEKOMOEKISSATEN",
+        "NEKOMOEKISSATEN", "DBDRAWS",
     };
 
     internal static TokenKind Classify(string value, bool bracketed)
@@ -117,7 +117,7 @@ internal static class TokenClassifier
     private static bool IsTechnicalGroup(string value)
     {
         var parts = value.Split(
-            new[] { ' ', '\t', ',', '+', '/', ';' },
+            new[] { ' ', '\t', ',', '+', '/', ';', '-', '_', '.' },
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         if (parts.Length < 2)
