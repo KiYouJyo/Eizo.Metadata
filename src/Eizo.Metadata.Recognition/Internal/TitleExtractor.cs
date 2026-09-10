@@ -402,8 +402,12 @@ internal static class TitleExtractor
         NormalizedMediaPath path,
         bool[] removal)
     {
+        var technicalSuffix = TechnicalSuffixAnalyzer.Analyze(path);
         var yearTokens = path.Tokens
-            .Where(static token => token.Kind == TokenKind.Year)
+            .Where(token =>
+                token.Kind == TokenKind.Year &&
+                (technicalSuffix is null ||
+                 token.Start >= technicalSuffix.StartIndex))
             .ToArray();
 
         if (yearTokens.Length == 0)
