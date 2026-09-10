@@ -178,7 +178,9 @@ internal static class TitleExtractor
         var removal = new bool[path.Stem.Length];
 
         MarkNoiseTokens(path, removal);
+        MarkProviderMetadataTokens(path, removal);
         MarkEpisodeSyntax(path, removal);
+        MarkTrailingBareEpisode(path, episode, removal);
         MarkLeadingReleaseGroupHeuristic(path, removal);
         MarkOptionalYear(path, removal);
 
@@ -248,6 +250,46 @@ internal static class TitleExtractor
             }
 
             Mark(removal, token.Start, token.Length);
+        }
+    }
+
+    private static void MarkProviderMetadataTokens(
+        NormalizedMediaPath path,
+        bool[] removal)
+    {
+        foreach (var token in path.Tokens)
+        {
+            if (ReleaseNoiseClassifier.IsProviderMetadataTag(token))
+            {
+                Mark(removal, token.Start, token.Length);
+            }
+        }
+    }
+
+    private static void MarkTrailingBareEpisode(
+        NormalizedMediaPath path,
+        EpisodeExtractionResult episode,
+        bool[] removal)
+    {
+        if (!episode.Evidence.Any(static item =>
+                item.Code == "episode.bare-trailing-release-tag"))
+        {
+            return;
+        }
+
+        if (!TrailingBareEpisodeHeuristic.TryMatch(
+                path,
+                out var episodeToken,
+                out var releaseTags))
+        {
+            return;
+        }
+
+        Mark(removal, episodeToken.Start, episodeToken.Length);
+
+        foreach (var tag in releaseTags)
+        {
+            Mark(removal, tag.Start, tag.Length);
         }
     }
 
