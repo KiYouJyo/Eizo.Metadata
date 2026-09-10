@@ -16,6 +16,7 @@ public sealed class Stage6GoldenCorpusTests
         var engine = new RecognitionEngine();
         var cases = Stage6CorpusSupport.LoadGolden();
         var failures = new List<string>();
+        var mismatchCount = 0;
 
         foreach (var item in cases)
         {
@@ -33,21 +34,26 @@ public sealed class Stage6GoldenCorpusTests
                 result.SpecialNumber != item.SpecialNumber ||
                 result.Year != item.Year)
             {
-                failures.Add(
-                    $"{item.Path} => title={result.Title}, kind={result.MediaKind}, " +
-                    $"special={result.SpecialKind}, part={result.EpisodePart}, final={result.IsFinalEpisode}, " +
-                    $"season={result.SeasonNumber}, cour={result.CourNumber}, ep={result.EpisodeNumber}, " +
-                    $"end={result.EpisodeEndNumber}, specialNo={result.SpecialNumber}, year={result.Year}");
+                mismatchCount++;
 
-                if (failures.Count >= 20)
+                if (failures.Count < 20)
                 {
-                    break;
+                    failures.Add(
+                        $"{item.Path} => title={result.Title}, kind={result.MediaKind}, " +
+                        $"special={result.SpecialKind}, part={result.EpisodePart}, final={result.IsFinalEpisode}, " +
+                        $"season={result.SeasonNumber}, cour={result.CourNumber}, ep={result.EpisodeNumber}, " +
+                        $"end={result.EpisodeEndNumber}, specialNo={result.SpecialNumber}, year={result.Year}");
                 }
             }
         }
 
+        var coverage = (double)(cases.Count - mismatchCount) / cases.Count;
+        Console.WriteLine(
+            $"Stage6 golden extraction coverage: {cases.Count - mismatchCount}/{cases.Count} ({coverage:P3})");
+
         Assert.True(
-            failures.Count == 0,
-            "Stage 6 golden corpus mismatches:\n" + string.Join("\n", failures));
+            mismatchCount == 0,
+            $"Stage 6 golden corpus mismatches: {mismatchCount}/{cases.Count}\n" +
+            string.Join("\n", failures));
     }
 }
