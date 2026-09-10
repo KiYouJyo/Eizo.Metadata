@@ -35,12 +35,16 @@ src/
   Eizo.Metadata.Recognition/        Offline recognition contracts and implementation
 
 tests/
-  Eizo.Metadata.Recognition.Tests/  Unit, regression and corpus tests
+  Eizo.Metadata.Recognition.Tests/  Unit, regression, corpus and fuzz tests
+
+benchmarks/
+  Eizo.Metadata.Recognition.Benchmarks/  Repeatable 1K/10K/100K scan benchmark
 
 docs/
   architecture.md                   Module boundary and dependency rules
   recognition-plan.md               Recognition development stages and acceptance gates
   testing.md                        Test corpus and quality strategy
+  recognition-performance.md        Stage 6 performance baseline and methodology
 ```
 
 ## Dependency rule
@@ -72,7 +76,7 @@ dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 
 ## Status
 
-**Recognition Stage 5 — calibrated confidence and explainability.**
+**Recognition Stage 6 — corpus hardening and performance baseline.**
 
 Implemented so far:
 
@@ -89,14 +93,21 @@ Implemented so far:
 - collision protection for title text such as `SPY x FAMILY`, `Special Ops`,
   `Movie Night` and `OVA Project`;
 - deterministic evidence output with no network or disk dependency;
-- Windows/Linux CI, package validation and **923 passing tests**;
-- a **500-case sanitized Stage 4 domain corpus**;
+- Windows/Linux CI, package validation and **939 passing tests**;
+- a **2,000-case sanitized Stage 6 golden corpus** with 100% expected-structure coverage;
+- a separate **400-case negative corpus** with **0/400 structural false positives**;
+- **1,000 seeded Unicode fuzz paths** plus adversarial long-input regression tests;
 - calibrated `Confidence` plus `RecognitionConfidenceLevel`;
 - explicit `IsAmbiguous` output for conflicting evidence;
 - ranked, deduplicated public title candidates for Metadata Provider search;
-- confidence evidence for title/episode/domain components, consensus and conflicts.
+- confidence evidence for title/episode/domain components, consensus and conflicts;
+- regression fixes for resolution suffixes such as `S01E03.1080p` and embedded
+  Japanese words such as `前編資料` / `最終話資料`;
+- repeatable CI benchmark artifacts for 1K / 10K / 100K scans;
+- current Ubuntu CI baseline: **59.5 ms / 603.6 ms / 2,789.3 ms** respectively.
 
-Corpus hardening and performance validation are the next stage.
+Recognition is now hardened enough for Stage 7 Eizo integration and metadata-provider
+work to begin without expanding the Recognition dependency boundary.
 
 See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
 plan and acceptance criteria.
