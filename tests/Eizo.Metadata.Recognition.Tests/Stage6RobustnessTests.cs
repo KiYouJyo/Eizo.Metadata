@@ -26,7 +26,7 @@ public sealed class Stage6RobustnessTests
         for (var i = 0; i < 250; i++)
         {
             var title = titles[i % titles.Length];
-            var separators = i % 4 switch
+            var separators = (i % 4) switch
             {
                 0 => " - ",
                 1 => " — ",
