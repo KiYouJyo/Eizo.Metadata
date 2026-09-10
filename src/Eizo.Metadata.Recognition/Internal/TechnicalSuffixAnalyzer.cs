@@ -92,23 +92,22 @@ internal static class TechnicalSuffixAnalyzer
             return true;
         }
 
+        // Preserve an early title-like year only when another plausible year
+        // appears later before the technical tail, e.g. SAC_2045...2021.1080p.
+        // A normal release year followed by an episode marker remains the
+        // suffix boundary: Title 2021 第04話 1080p HDTV.
         for (var i = index + 1; i < tokens.Count; i++)
         {
             var token = tokens[i];
+            if (token.Kind == TokenKind.Year)
+            {
+                return false;
+            }
+
             if (IsStrongSignal(token))
             {
                 return true;
             }
-
-            if (token.Kind is TokenKind.Separator or TokenKind.Year ||
-                ReleaseNoiseClassifier.IsTrailingNoiseTag(token))
-            {
-                continue;
-            }
-
-            // A lexical token between a year-like title token and the technical
-            // tail means this year belongs to the title, e.g. SAC_2045.
-            return false;
         }
 
         return false;
