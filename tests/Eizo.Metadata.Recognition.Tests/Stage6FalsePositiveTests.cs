@@ -8,6 +8,7 @@ public sealed class Stage6FalsePositiveTests
         var engine = new RecognitionEngine();
         var cases = Stage6CorpusSupport.LoadNegative();
         var falsePositives = new List<string>();
+        var falsePositiveCount = 0;
 
         foreach (var item in cases)
         {
@@ -23,25 +24,26 @@ public sealed class Stage6FalsePositiveTests
 
             if (structuralFalsePositive)
             {
-                falsePositives.Add(
-                    $"{item.Path} => kind={result.MediaKind}, special={result.SpecialKind}, " +
-                    $"episode={result.EpisodeNumber}, specialNo={result.SpecialNumber}");
+                falsePositiveCount++;
 
-                if (falsePositives.Count >= 20)
+                if (falsePositives.Count < 20)
                 {
-                    break;
+                    falsePositives.Add(
+                        $"{item.Path} => kind={result.MediaKind}, special={result.SpecialKind}, " +
+                        $"episode={result.EpisodeNumber}, specialNo={result.SpecialNumber}");
                 }
             }
         }
 
-        var falsePositiveRate = (double)falsePositives.Count / cases.Count;
+        var falsePositiveRate = (double)falsePositiveCount / cases.Count;
         Console.WriteLine(
-            $"Stage6 structural false-positive baseline: {falsePositives.Count}/{cases.Count} " +
+            $"Stage6 structural false-positive baseline: {falsePositiveCount}/{cases.Count} " +
             $"({falsePositiveRate:P3})");
 
         Assert.True(cases.Count >= 400);
         Assert.True(
-            falsePositives.Count == 0,
-            "Structural false positives:\n" + string.Join("\n", falsePositives));
+            falsePositiveCount == 0,
+            $"Structural false positives: {falsePositiveCount}/{cases.Count}\n" +
+            string.Join("\n", falsePositives));
     }
 }
