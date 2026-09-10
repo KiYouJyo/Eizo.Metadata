@@ -76,6 +76,7 @@ internal static class EpisodeExtractor
             MatchPattern(OneXEpisodeRegex, stem, "episode.onex", 0.96) ??
             MatchPattern(PrefixedEpisodeRegex, stem, "episode.prefixed", 0.95) ??
             MatchPattern(JapaneseEpisodeRegex, stem, "episode.japanese-numbered", 0.95) ??
+            MatchTrailingBareWithReleaseTags(path) ??
             MatchBare(DashEpisodeRegex, stem, "episode.bare-delimited", 0.80) ??
             MatchBare(PureEpisodeRegex, stem, "episode.bare-filename", 0.66) ??
             EpisodeExtractionResult.Empty;
@@ -116,6 +117,43 @@ internal static class EpisodeExtractor
             CourNumber: null,
             confidence,
             evidence);
+    }
+
+    private static EpisodeExtractionResult? MatchTrailingBareWithReleaseTags(
+        NormalizedMediaPath path)
+    {
+        if (!TrailingBareEpisodeHeuristic.TryMatch(
+                path,
+                out var episodeToken,
+                out var releaseTags) ||
+            !decimal.TryParse(
+                episodeToken.NormalizedValue,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var episode))
+        {
+            return null;
+        }
+
+        var evidenceValue =
+            episodeToken.NormalizedValue + " " +
+            string.Join(
+                string.Empty,
+                releaseTags.Select(static tag => tag.RawValue));
+
+        return new EpisodeExtractionResult(
+            SeasonNumber: null,
+            episode,
+            EpisodeEndNumber: null,
+            CourNumber: null,
+            Confidence: 0.78,
+            new[]
+            {
+                new RecognitionEvidence(
+                    "episode.bare-trailing-release-tag",
+                    evidenceValue,
+                    0.78),
+            });
     }
 
     private static EpisodeExtractionResult? MatchBare(
