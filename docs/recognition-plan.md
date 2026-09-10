@@ -213,7 +213,12 @@ Exit gate:
 
 ## Stage 6 — Corpus hardening and performance
 
-Move from feature completeness to reliability.
+Status: **implemented and CI-verified**.
+
+Recognition is now hardened against a 2,000-case positive corpus, a separately measured
+400-case structural false-positive corpus, deterministic Unicode fuzzing and adversarial
+long-input cases. A dependency-free benchmark harness records 1K/10K/100K scan baselines
+as CI artifacts.
 
 Scope:
 
@@ -227,9 +232,14 @@ Scope:
 
 Exit gate:
 
-- zero known crashes on corpus/fuzz inputs;
-- stable benchmark baseline documented in CI artifacts or repository docs;
-- false-positive rate is tracked separately from extraction coverage.
+- 2,000/2,000 Stage 6 golden cases match expected structured output;
+- structural false-positive baseline is 0/400 on the curated negative corpus;
+- 1,000 seeded Unicode fuzz paths plus adversarial long inputs complete without known crashes;
+- the full suite reaches 939 passing tests on Windows and Linux;
+- NuGet package validation remains green;
+- benchmark CI records 1K / 10K / 100K scans and uploads Markdown/JSON artifacts;
+- the first Ubuntu CI baseline is 59.5 ms / 603.6 ms / 2,789.3 ms respectively;
+- benchmark numbers are comparative baselines, not a hardware-independent SLA.
 
 ---
 
@@ -265,7 +275,7 @@ Exit gate:
 
 ## After Recognition
 
-Only after Stage 5 is stable should the repository begin the online metadata layer,
+With Stage 6 stable, the repository can begin the online metadata layer,
 for example:
 
 ```text

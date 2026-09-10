@@ -13,15 +13,15 @@ internal static class TitleExtractor
     private static readonly Regex[] EpisodePatterns =
     {
         new(
-            @"(?<![A-Za-z0-9])S\d{1,2}E\d{1,3}(?:\.\d+)?(?:\s*[-~]\s*(?:E)?\d{1,3}(?:\.\d+)?)?(?!\d)",
+            @"(?<![A-Za-z0-9])S\d{1,2}E\d{1,3}(?:\.\d+)?(?![PpIi])(?:\s*[-~]\s*(?:E)?\d{1,3}(?:\.\d+)?(?![PpIi]))?(?!\d)",
             Options,
             RegexTimeout),
         new(
-            @"(?<![A-Za-z0-9])\d{1,2}x\d{1,3}(?:\.\d+)?(?!\d)",
+            @"(?<![A-Za-z0-9])\d{1,2}x\d{1,3}(?:\.\d+)?(?![PpIi\d])",
             Options,
             RegexTimeout),
         new(
-            @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)\s*[-_. ]?\d{1,3}(?:\.\d+)?(?:\s*[-~]\s*(?:EP|E)?\s*\d{1,3}(?:\.\d+)?)?(?!\d)",
+            @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)\s*[-_. ]?\d{1,3}(?:\.\d+)?(?![PpIi])(?:\s*[-~]\s*(?:EP|E)?\s*\d{1,3}(?:\.\d+)?(?![PpIi]))?(?!\d)",
             Options,
             RegexTimeout),
         new(
@@ -53,11 +53,11 @@ internal static class TitleExtractor
             Options,
             RegexTimeout),
         new(
-            @"(?:最終話|最終回)(?:\s*[「『].*?[」』]|\s+[^[(【]+)?",
+            @"(?:最終話|最終回)(?![\p{L}\p{N}])(?:\s*[「『].*?[」』]|\s+[^[(【]+)?",
             Options,
             RegexTimeout),
         new(
-            @"(?:前編|前篇|後編|後篇)(?:\s*[「『].*?[」』])?",
+            @"(?:前編|前篇|後編|後篇)(?![\p{L}\p{N}])(?:\s*[「『].*?[」』])?",
             Options,
             RegexTimeout),
     };

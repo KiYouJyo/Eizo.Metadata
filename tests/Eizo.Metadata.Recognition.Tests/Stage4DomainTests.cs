@@ -96,6 +96,22 @@ public sealed class Stage4DomainTests
         Assert.Equal("ドラマ", result.Title);
     }
 
+
+    [Theory]
+    [InlineData("前編資料.2026.1080p.WEB-DL.mkv")]
+    [InlineData("後編資料 1080p.mkv")]
+    [InlineData("最終話資料 2026.mkv")]
+    [InlineData("最終回顧録 2026.mkv")]
+    public void Recognize_DoesNotPromoteEmbeddedJapaneseEpisodeMarkers(string path)
+    {
+        var result = _engine.Recognize(new RecognitionRequest(path));
+
+        Assert.Equal(MediaKind.Unknown, result.MediaKind);
+        Assert.Equal(EpisodePart.None, result.EpisodePart);
+        Assert.False(result.IsFinalEpisode);
+        Assert.Null(result.EpisodeNumber);
+    }
+
     [Theory]
     [InlineData("SPY x FAMILY - 01 [1080P].mkv")]
     [InlineData("Special Ops S01E01.mkv")]
