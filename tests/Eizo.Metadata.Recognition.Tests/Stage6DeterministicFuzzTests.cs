@@ -26,7 +26,7 @@ public sealed class Stage6DeterministicFuzzTests
                 builder.Append(atoms[Next(ref state) % (uint)atoms.Length]);
             }
 
-            builder.Append(caseIndex % 3 switch
+            builder.Append((caseIndex % 3) switch
             {
                 0 => ".mkv",
                 1 => ".mp4",
