@@ -98,7 +98,7 @@ static string CreateInput(int index)
 
     var episode = index % 24 + 1;
 
-    return index % 10 switch
+    return (index % 10) switch
     {
         0 => $"[ANi] {title} - {episode:D2} [1080P][WEB-DL][AAC].mkv",
         1 => $"{title}.S01E{episode:D2}.1080p.WEB-DL.x265.AAC.mkv",
