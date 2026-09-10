@@ -11,17 +11,17 @@ internal static class EpisodeExtractor
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeasonEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])S(?<season>\d{1,2})E(?<episode>\d{1,3}(?:\.\d+)?)(?:\s*[-~]\s*(?:E)?(?<end>\d{1,3}(?:\.\d+)?))?(?!\d)",
+        @"(?<![A-Za-z0-9])S(?<season>\d{1,2})E(?<episode>\d{1,3}(?:\.\d+)?)(?![PpIi])(?:\s*[-~]\s*(?:E)?(?<end>\d{1,3}(?:\.\d+)?)(?![PpIi]))?(?!\d)",
         Options,
         RegexTimeout);
 
     private static readonly Regex OneXEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])(?<season>\d{1,2})x(?<episode>\d{1,3}(?:\.\d+)?)(?!\d)",
+        @"(?<![A-Za-z0-9])(?<season>\d{1,2})x(?<episode>\d{1,3}(?:\.\d+)?)(?![PpIi\d])",
         Options,
         RegexTimeout);
 
     private static readonly Regex PrefixedEpisodeRegex = new(
-        @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)\s*[-_. ]?(?<episode>\d{1,3}(?:\.\d+)?)(?:\s*[-~]\s*(?:EP|E)?\s*(?<end>\d{1,3}(?:\.\d+)?))?(?!\d)",
+        @"(?<![A-Za-z0-9])(?:EPISODE|EP|E)\s*[-_. ]?(?<episode>\d{1,3}(?:\.\d+)?)(?![PpIi])(?:\s*[-~]\s*(?:EP|E)?\s*(?<end>\d{1,3}(?:\.\d+)?)(?![PpIi]))?(?!\d)",
         Options,
         RegexTimeout);
 
