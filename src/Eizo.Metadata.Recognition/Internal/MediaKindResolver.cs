@@ -10,7 +10,7 @@ internal static class MediaKindResolver
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeriesDirectoryRegex = new(
-        @"(?:^|[\s._\-\[（(])(?:SEASON\s*0?\d{1,2}|S\s*0?\d{1,2}|PART\s*0?\d{1,2}|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ))(?:$|[\s._\-\]）)])",
+        @"(?:SEASON\s*0?\d{1,2}|(?<![A-Za-z0-9])S\s*0?\d{1,2}(?![A-Za-z0-9])|(?<![A-Za-z])PART\s*0?\d{1,2}(?!\d)|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ))",
         Options,
         Timeout);
 
