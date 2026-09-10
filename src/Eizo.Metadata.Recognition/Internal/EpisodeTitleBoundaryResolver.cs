@@ -28,9 +28,9 @@ internal static class EpisodeTitleBoundaryResolver
         ArgumentNullException.ThrowIfNull(episode);
         ArgumentNullException.ThrowIfNull(result);
 
-        if (!string.IsNullOrWhiteSpace(result.EpisodeTitle) ||
-            episode.EpisodeNumber is null ||
-            episode.EpisodeNumber != decimal.Truncate(episode.EpisodeNumber))
+        if (episode.EpisodeNumber is null ||
+            !string.IsNullOrWhiteSpace(result.EpisodeTitle) ||
+            episode.EpisodeNumber.Value != decimal.Truncate(episode.EpisodeNumber.Value))
         {
             return result;
         }
