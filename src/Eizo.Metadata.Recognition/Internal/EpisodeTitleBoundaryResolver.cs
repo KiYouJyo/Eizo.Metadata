@@ -78,7 +78,7 @@ internal static class EpisodeTitleBoundaryResolver
 
         var candidate = PathPreprocessor.Preprocess(value + ".mkv");
         return candidate.Tokens.Any(static token =>
-            token.Kind is TokenKind.Text or TokenKind.BracketGroup &&
+            (token.Kind is TokenKind.Text or TokenKind.BracketGroup) &&
             !ReleaseNoiseClassifier.IsProviderMetadataTag(token) &&
             token.NormalizedValue.Any(static c =>
                 char.IsLetter(c) ||
