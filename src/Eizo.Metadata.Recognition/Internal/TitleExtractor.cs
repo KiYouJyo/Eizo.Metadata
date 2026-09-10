@@ -199,6 +199,7 @@ internal static class TitleExtractor
 
         MarkNoiseTokens(path, removal);
         MarkProviderMetadataTokens(path, removal);
+        MarkTechnicalSuffix(path, removal);
         MarkEpisodeSyntax(path, removal);
         MarkTrailingBareEpisode(path, episode, removal);
         MarkLeadingReleaseGroupHeuristic(path, removal);
@@ -313,6 +314,22 @@ internal static class TitleExtractor
         }
     }
 
+    private static void MarkTechnicalSuffix(
+        NormalizedMediaPath path,
+        bool[] removal)
+    {
+        var suffix = TechnicalSuffixAnalyzer.Analyze(path);
+        if (suffix is null)
+        {
+            return;
+        }
+
+        Mark(
+            removal,
+            suffix.StartIndex,
+            path.Stem.Length - suffix.StartIndex);
+    }
+
     private static void MarkEpisodeSyntax(
         NormalizedMediaPath path,
         bool[] removal)
@@ -385,8 +402,12 @@ internal static class TitleExtractor
         NormalizedMediaPath path,
         bool[] removal)
     {
+        var technicalSuffix = TechnicalSuffixAnalyzer.Analyze(path);
         var yearTokens = path.Tokens
-            .Where(static token => token.Kind == TokenKind.Year)
+            .Where(token =>
+                token.Kind == TokenKind.Year &&
+                (technicalSuffix is null ||
+                 token.Start >= technicalSuffix.StartIndex))
             .ToArray();
 
         if (yearTokens.Length == 0)

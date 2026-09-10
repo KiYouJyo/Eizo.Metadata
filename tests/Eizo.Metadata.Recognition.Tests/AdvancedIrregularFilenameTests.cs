@@ -107,6 +107,80 @@ public sealed class AdvancedIrregularFilenameTests
         Assert.NotEqual(MediaKind.SeriesEpisode, result.MediaKind);
     }
 
+    [Fact]
+    public void Recognize_GhostInTheShellAriseRemuxExample()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "攻殻機動隊ARISE border-4 Ghost Stands Alone.2014.1080p.BluRay.Remux.AVC.Dolby TrueHD.7.1 -WuKe.mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal("攻殻機動隊ARISE", result.Title);
+        Assert.Equal("Ghost Stands Alone", result.EpisodeTitle);
+        Assert.Equal(4m, result.EpisodeNumber);
+        Assert.Equal(2014, result.Year);
+        Assert.Contains(result.Evidence, static item =>
+            item.Code == "episode.named-ordinal.border");
+        Assert.Contains(result.Evidence, static item =>
+            item.Code == "release-group.trailing" &&
+            item.Value == "WuKe");
+    }
+
+    [Theory]
+    [InlineData("Series border-1 First Ghost.2013.1080p.BluRay.Remux.AVC.TrueHD.5.1-GRP.mkv", "Series", "First Ghost", 1)]
+    [InlineData("Series BORDER 12 Final Border.2024.2160p.BluRay.Remux.HEVC.DTS.5.1-Team.mkv", "Series", "Final Border", 12)]
+    public void Recognize_NamedBorderInstallments(
+        string path,
+        string expectedTitle,
+        string expectedEpisodeTitle,
+        int expectedEpisode)
+    {
+        var result = _engine.Recognize(new RecognitionRequest(path));
+
+        Assert.Equal(expectedTitle, result.Title);
+        Assert.Equal(expectedEpisodeTitle, result.EpisodeTitle);
+        Assert.Equal((decimal)expectedEpisode, result.EpisodeNumber);
+    }
+
+    [Theory]
+    [InlineData("Border Security 4.2014.1080p.BluRay.Remux.AVC.mkv")]
+    [InlineData("Research border notes 4.2014.1080p.BluRay.Remux.AVC.mkv")]
+    [InlineData("Movie Part-2 The Return.2014.1080p.BluRay.Remux.AVC.mkv")]
+    [InlineData("Archive Disc-2.2014.1080p.BluRay.Remux.AVC.mkv")]
+    public void Recognize_DoesNotOverApplyNamedOrdinalRule(string path)
+    {
+        var result = _engine.Recognize(new RecognitionRequest(path));
+
+        Assert.DoesNotContain(result.Evidence, static item =>
+            item.Code.StartsWith("episode.named-ordinal.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Recognize_TechnicalSuffixDoesNotPollutePlainMovieTitle()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "Some Movie.2019.1080p.BluRay.Remux.AVC.Dolby TrueHD.7.1 -WuKe.mkv"));
+
+        Assert.Equal("Some Movie", result.Title);
+        Assert.Equal(2019, result.Year);
+        Assert.Null(result.EpisodeNumber);
+        Assert.Contains(result.Evidence, static item =>
+            item.Code == "release-group.trailing" &&
+            item.Value == "WuKe");
+    }
+
+    [Fact]
+    public void Recognize_TitleYearCollisionUsesTechnicalSuffixYear()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "2001 A Space Odyssey.1968.1080p.BluRay.Remux.AVC.TrueHD.5.1-GRP.mkv"));
+
+        Assert.Equal("2001 A Space Odyssey", result.Title);
+        Assert.Equal(1968, result.Year);
+    }
+
     [Theory]
     [InlineData("HEVC-10bit")]
     [InlineData("x265-10bit")]
