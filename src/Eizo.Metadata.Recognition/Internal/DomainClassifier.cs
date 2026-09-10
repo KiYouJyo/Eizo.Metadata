@@ -31,17 +31,17 @@ internal static class DomainClassifier
         RegexTimeout);
 
     private static readonly Regex FinaleRegex = new(
-        @"(?:最終話|最終回)(?![\\p{L}\\p{N}])",
+        @"(?:最終話|最終回)(?![\p{L}\p{N}])",
         Options,
         RegexTimeout);
 
     private static readonly Regex FirstPartRegex = new(
-        @"(?:前編|前篇)(?![\\p{L}\\p{N}])",
+        @"(?:前編|前篇)(?![\p{L}\p{N}])",
         Options,
         RegexTimeout);
 
     private static readonly Regex SecondPartRegex = new(
-        @"(?:後編|後篇)(?![\\p{L}\\p{N}])",
+        @"(?:後編|後篇)(?![\p{L}\p{N}])",
         Options,
         RegexTimeout);
 
