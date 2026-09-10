@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: metadata-runtime-${{ github.ref }}
@@ -45,8 +45,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $bin | Out-Null
 
           # Recognition is the first Metadata module. Provider projects are intentionally
-          # packaged into the same runtime as they are introduced, so the host never has
-          # to coordinate independent Recognition/Provider versions.
+          # packaged into this same runtime as they are introduced, so Recognition and
+          # Metadata Providers always advance as one compatibility-tested unit.
           dotnet build src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj --configuration Release --no-restore --output $bin
           if ($LASTEXITCODE -ne 0) { throw "Metadata runtime build failed: $LASTEXITCODE" }
 
@@ -57,8 +57,8 @@ jobs:
 
           $manifest = [ordered]@{
             schemaVersion = 1
-            # Technical component identity remains compatible with the 0.3.6 host;
-            # this package is user-facing as the unified Metadata runtime.
+            # Eizo 0.3.6 keeps this technical identity for on-disk compatibility.
+            # The user-facing component and release unit are Eizo.Metadata.
             component = 'Eizo.Recognition'
             version = $version
             abiVersion = $abiVersion
@@ -77,8 +77,8 @@ jobs:
           $manifestPath = Join-Path $root 'eizo-recognition-release.json'
           $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 
-          # Keep the 0.3.6 technical archive/manifest names stable while exposing this
-          # as one Metadata update in the UI. This avoids a migration-only compatibility break.
+          # Keep 0.3.6 technical asset names stable. Future host-contract revisions can
+          # migrate the internal identity without breaking already-installed 0.3.6 hosts.
           $zip = Join-Path $env:RUNNER_TEMP "Eizo.Recognition.Runtime-v$version-x64.zip"
           Compress-Archive -Path (Join-Path $root '*') -DestinationPath $zip -CompressionLevel Optimal
 
@@ -103,3 +103,21 @@ jobs:
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish Metadata runtime v0.1.1
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v0.1.1 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.1.1 already exists; leaving the published release immutable.'
+            exit 0
+          fi
+          gh release create v0.1.1 \
+            --target "${GITHUB_SHA}" \
+            --title "Eizo.Metadata v0.1.1" \
+            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.1.1 includes the real-world Recognition regression fixes for episode/domain precedence, episode-year boundaries, parent-directory filtering, technical-tag cleanup, anime bracket naming, and episode-title extraction." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.1.1-x64.zip" \
+            "${RUNNER_TEMP}/eizo-recognition-release.json" \
+            "${RUNNER_TEMP}/SHA256SUMS.txt"
