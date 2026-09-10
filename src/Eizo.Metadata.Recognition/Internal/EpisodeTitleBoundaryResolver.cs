@@ -8,6 +8,7 @@ internal static class EpisodeTitleBoundaryResolver
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(50);
+    private const int MaxBoundaryProbeLength = 2048;
 
     private static readonly Regex DotSeasonEpisodeRegex = new(
         @"^(?<series>.+?)(?:\s|[._-])*S\d{1,2}E\d{1,4}[._](?<title>.+?)\s*$",
@@ -30,7 +31,8 @@ internal static class EpisodeTitleBoundaryResolver
 
         if (episode.EpisodeNumber is null ||
             !string.IsNullOrWhiteSpace(result.EpisodeTitle) ||
-            episode.EpisodeNumber.Value != decimal.Truncate(episode.EpisodeNumber.Value))
+            episode.EpisodeNumber.Value != decimal.Truncate(episode.EpisodeNumber.Value) ||
+            path.Stem.Length > MaxBoundaryProbeLength)
         {
             return result;
         }
