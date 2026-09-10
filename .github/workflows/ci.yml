@@ -81,3 +81,31 @@ jobs:
           path: artifacts/packages/*.nupkg
           if-no-files-found: error
           retention-days: 14
+
+  benchmark:
+    needs: build-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore benchmark
+        run: dotnet restore benchmarks/Eizo.Metadata.Recognition.Benchmarks/Eizo.Metadata.Recognition.Benchmarks.csproj
+
+      - name: Run 1K / 10K / 100K benchmark
+        run: dotnet run --project benchmarks/Eizo.Metadata.Recognition.Benchmarks/Eizo.Metadata.Recognition.Benchmarks.csproj --configuration Release --no-restore -- --output artifacts/benchmarks
+
+      - name: Upload benchmark baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: eizo-metadata-recognition-benchmark-${{ github.sha }}
+          path: artifacts/benchmarks/*
+          if-no-files-found: error
+          retention-days: 14
