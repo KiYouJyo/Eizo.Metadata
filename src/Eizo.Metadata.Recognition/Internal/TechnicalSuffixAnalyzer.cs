@@ -23,6 +23,7 @@ internal static class TechnicalSuffixAnalyzer
         {
             var candidate = tokens[i];
             if (!IsPotentialStart(candidate) ||
+                !CanStartSuffix(tokens, i) ||
                 !HasMeaningfulContentBefore(tokens, i) ||
                 CountStrongSignals(tokens, i) < 2)
             {
@@ -81,6 +82,37 @@ internal static class TechnicalSuffixAnalyzer
             TokenKind.AudioCodec or
             TokenKind.BitDepth or
             TokenKind.TechnicalGroup;
+
+    private static bool CanStartSuffix(
+        IReadOnlyList<RecognitionToken> tokens,
+        int index)
+    {
+        if (tokens[index].Kind != TokenKind.Year)
+        {
+            return true;
+        }
+
+        for (var i = index + 1; i < tokens.Count; i++)
+        {
+            var token = tokens[i];
+            if (IsStrongSignal(token))
+            {
+                return true;
+            }
+
+            if (token.Kind is TokenKind.Separator or TokenKind.Year ||
+                ReleaseNoiseClassifier.IsTrailingNoiseTag(token))
+            {
+                continue;
+            }
+
+            // A lexical token between a year-like title token and the technical
+            // tail means this year belongs to the title, e.g. SAC_2045.
+            return false;
+        }
+
+        return false;
+    }
 
     private static int CountStrongSignals(
         IReadOnlyList<RecognitionToken> tokens,
