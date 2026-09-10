@@ -76,6 +76,7 @@ internal static class EpisodeExtractor
             MatchPattern(OneXEpisodeRegex, stem, "episode.onex", 0.96) ??
             MatchPattern(PrefixedEpisodeRegex, stem, "episode.prefixed", 0.95) ??
             MatchPattern(JapaneseEpisodeRegex, stem, "episode.japanese-numbered", 0.95) ??
+            MatchNamedOrdinal(path) ??
             MatchAllBracketSequence(path) ??
             MatchTrailingBareWithReleaseTags(path) ??
             MatchBare(DashEpisodeRegex, stem, "episode.bare-delimited", 0.80) ??
@@ -118,6 +119,30 @@ internal static class EpisodeExtractor
             CourNumber: null,
             confidence,
             evidence);
+    }
+
+    private static EpisodeExtractionResult? MatchNamedOrdinal(
+        NormalizedMediaPath path)
+    {
+        if (!NamedOrdinalAnalyzer.TryAnalyze(path, out var named))
+        {
+            return null;
+        }
+
+        return new EpisodeExtractionResult(
+            SeasonNumber: null,
+            named.Number,
+            EpisodeEndNumber: null,
+            CourNumber: null,
+            named.Confidence,
+            new[]
+            {
+                new RecognitionEvidence(
+                    "episode.named-ordinal." + named.Marker.ToLowerInvariant(),
+                    named.Marker + "-" +
+                    named.Number.ToString(CultureInfo.InvariantCulture),
+                    named.Confidence),
+            });
     }
 
     private static EpisodeExtractionResult? MatchAllBracketSequence(

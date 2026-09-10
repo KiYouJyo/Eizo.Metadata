@@ -199,6 +199,7 @@ internal static class TitleExtractor
 
         MarkNoiseTokens(path, removal);
         MarkProviderMetadataTokens(path, removal);
+        MarkTechnicalSuffix(path, removal);
         MarkEpisodeSyntax(path, removal);
         MarkTrailingBareEpisode(path, episode, removal);
         MarkLeadingReleaseGroupHeuristic(path, removal);
@@ -311,6 +312,22 @@ internal static class TitleExtractor
         {
             Mark(removal, tag.Start, tag.Length);
         }
+    }
+
+    private static void MarkTechnicalSuffix(
+        NormalizedMediaPath path,
+        bool[] removal)
+    {
+        var suffix = TechnicalSuffixAnalyzer.Analyze(path);
+        if (suffix is null)
+        {
+            return;
+        }
+
+        Mark(
+            removal,
+            suffix.StartIndex,
+            path.Stem.Length - suffix.StartIndex);
     }
 
     private static void MarkEpisodeSyntax(

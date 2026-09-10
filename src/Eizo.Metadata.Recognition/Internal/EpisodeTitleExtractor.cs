@@ -41,6 +41,25 @@ internal static class EpisodeTitleExtractor
             return EpisodeTitleExtractionResult.Empty;
         }
 
+        if (NamedOrdinalAnalyzer.TryAnalyze(path, out var named) &&
+            named.Number == episode.EpisodeNumber)
+        {
+            return new EpisodeTitleExtractionResult(
+                named.EpisodeTitle,
+                named.SeriesTitle,
+                named.Confidence,
+                named.EpisodeTitle is null
+                    ? Array.Empty<RecognitionEvidence>()
+                    : new[]
+                    {
+                        new RecognitionEvidence(
+                            "episode-title.named-ordinal." +
+                            named.Marker.ToLowerInvariant(),
+                            named.EpisodeTitle,
+                            named.Confidence),
+                    });
+        }
+
         foreach (var (regex, code, confidence) in Patterns)
         {
             var match = regex.Match(path.Stem);

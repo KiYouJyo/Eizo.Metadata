@@ -12,17 +12,23 @@ public sealed class RecognitionEngine : IRecognitionEngine
         ArgumentNullException.ThrowIfNull(request);
 
         var path = PathPreprocessor.Preprocess(request.Path);
+        var technicalSuffix = TechnicalSuffixAnalyzer.Analyze(path);
         var episode = EpisodeExtractor.Extract(path);
         var episodeTitle = EpisodeTitleExtractor.Extract(path, episode);
         var domain = DomainClassifier.Classify(path);
         var title = TitleExtractor.Extract(path, episode, domain, episodeTitle);
 
         var evidence = new List<RecognitionEvidence>(episode.Evidence);
+        if (technicalSuffix is not null)
+        {
+            evidence.AddRange(technicalSuffix.Evidence);
+        }
+
         evidence.AddRange(episodeTitle.Evidence);
         evidence.AddRange(domain.Evidence);
         evidence.AddRange(title.Evidence);
 
-        var year = TryGetYear(path, evidence);
+        var year = TryGetYear(path, technicalSuffix, evidence);
         var mediaKind = ResolveMediaKind(episode, domain);
 
         var episodeNumber = episode.EpisodeNumber;
@@ -125,9 +131,11 @@ public sealed class RecognitionEngine : IRecognitionEngine
 
     private static int? TryGetYear(
         NormalizedMediaPath path,
+        TechnicalSuffixResult? technicalSuffix,
         ICollection<RecognitionEvidence> evidence)
     {
-        var token = path.Tokens.FirstOrDefault(static token => token.Kind == TokenKind.Year);
+        var token = technicalSuffix?.YearToken ??
+                    path.Tokens.FirstOrDefault(static token => token.Kind == TokenKind.Year);
         if (token is null || !int.TryParse(token.NormalizedValue, out var year))
         {
             return null;

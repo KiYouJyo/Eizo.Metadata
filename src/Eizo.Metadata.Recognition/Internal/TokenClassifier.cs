@@ -7,7 +7,7 @@ internal static class TokenClassifier
     private static readonly HashSet<string> Sources = new(StringComparer.Ordinal)
     {
         "WEB", "WEBDL", "WEBRIP", "BLURAY", "BDRIP", "BDREMUX", "HDTV",
-        "DVDRIP", "BAHA", "NETFLIX", "NF", "AMZN", "CR", "ATX",
+        "DVDRIP", "REMUX", "BAHA", "NETFLIX", "NF", "AMZN", "CR", "ATX",
     };
 
     private static readonly HashSet<string> VideoCodecs = new(StringComparer.Ordinal)
@@ -17,7 +17,8 @@ internal static class TokenClassifier
 
     private static readonly HashSet<string> AudioCodecs = new(StringComparer.Ordinal)
     {
-        "AAC", "FLAC", "AC3", "EAC3", "DTS", "TRUEHD", "OPUS", "MP3", "LPCM",
+        "AAC", "FLAC", "AC3", "EAC3", "DTS", "TRUEHD", "DOLBY", "ATMOS",
+        "OPUS", "MP3", "LPCM",
     };
 
     private static readonly HashSet<string> Languages = new(StringComparer.Ordinal)
