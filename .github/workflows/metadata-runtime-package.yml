@@ -1,0 +1,105 @@
+name: Metadata runtime package
+
+on:
+  push:
+    branches:
+      - "codex/metadata-runtime-release"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metadata-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Eizo.Metadata.slnx
+
+      - name: Build and test
+        run: |
+          dotnet build Eizo.Metadata.slnx --configuration Release --no-restore
+          dotnet test Eizo.Metadata.slnx --configuration Release --no-build
+
+      - name: Build unified Metadata runtime payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '0.1.1'
+          $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+
+          # Recognition is the first Metadata module. Provider projects are intentionally
+          # packaged into the same runtime as they are introduced, so the host never has
+          # to coordinate independent Recognition/Provider versions.
+          dotnet build src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj --configuration Release --no-restore --output $bin
+          if ($LASTEXITCODE -ne 0) { throw "Metadata runtime build failed: $LASTEXITCODE" }
+
+          $anchor = Join-Path $bin 'Eizo.Metadata.Recognition.dll'
+          if (-not (Test-Path $anchor)) { throw 'Metadata Recognition anchor assembly was not produced.' }
+          $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($anchor).Version
+          $abiVersion = "{0}.{1}.{2}" -f $assemblyVersion.Major, $assemblyVersion.Minor, [Math]::Max(0, $assemblyVersion.Build)
+
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            # Technical component identity remains compatible with the 0.3.6 host;
+            # this package is user-facing as the unified Metadata runtime.
+            component = 'Eizo.Recognition'
+            version = $version
+            abiVersion = $abiVersion
+            tag = "v$version"
+            commit = '${{ github.sha }}'
+            runtime = 'x64'
+            framework = 'net10.0'
+            sourceRepository = 'KiYouJyo/Eizo.Metadata'
+            modules = @('Eizo.Metadata.Recognition')
+            hostContract = [ordered]@{
+              name = 'Eizo.Recognition.Host'
+              minVersion = '1.0.0'
+              maxVersionExclusive = '2.0.0'
+            }
+          }
+          $manifestPath = Join-Path $root 'eizo-recognition-release.json'
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+
+          # Keep the 0.3.6 technical archive/manifest names stable while exposing this
+          # as one Metadata update in the UI. This avoids a migration-only compatibility break.
+          $zip = Join-Path $env:RUNNER_TEMP "Eizo.Recognition.Runtime-v$version-x64.zip"
+          Compress-Archive -Path (Join-Path $root '*') -DestinationPath $zip -CompressionLevel Optimal
+
+          $extract = Join-Path $env:RUNNER_TEMP 'metadata-runtime-verify'
+          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+          foreach ($required in @('eizo-recognition-release.json', 'bin/Eizo.Metadata.Recognition.dll')) {
+            if (-not (Test-Path (Join-Path $extract $required))) { throw "Runtime archive missing: $required" }
+          }
+
+          Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $env:RUNNER_TEMP 'eizo-recognition-release.json') -Force
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'SHA256SUMS.txt') -Encoding ascii
+          Write-Host "Unified Metadata runtime package PASS: $zip; ABI=$abiVersion"
+
+      - name: Upload Metadata runtime assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eizo-Metadata-runtime-v0.1.1-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.1.1-x64.zip
+            ${{ runner.temp }}/eizo-recognition-release.json
+            ${{ runner.temp }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
