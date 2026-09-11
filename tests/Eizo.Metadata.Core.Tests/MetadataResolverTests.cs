@@ -411,6 +411,124 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task Resolver_SeasonOneKeepsYearStrongEnoughToBeatUnknownYearDuplicate()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                CandidateOptionalYear(
+                    "2023",
+                    "药屋少女的呢喃",
+                    2023,
+                    MetadataSubjectKind.Series,
+                    0),
+                CandidateOptionalYear(
+                    "unknown",
+                    "药屋少女的呢喃",
+                    null,
+                    MetadataSubjectKind.Series,
+                    5),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["药屋少女的呢喃"],
+                2023,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2023", result.Best!.Candidate.Id.Value);
+        Assert.True(result.Best.Score >= 0.90);
+    }
+
+    [Fact]
+    public async Task Resolver_PenalizesOadCandidateForRegularSeriesRequest()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "tv",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅",
+                    2013,
+                    MetadataSubjectKind.Series,
+                    2),
+                Candidate(
+                    "oad",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅 OAD",
+                    2014,
+                    MetadataSubjectKind.Series,
+                    4),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["魔法少女☆伊莉雅"],
+                2013,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("tv", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Candidates.Single(item => item.Candidate.Id.Value == "oad").Evidence,
+            static value => value == "special-subject-mismatch=-0.040");
+    }
+
+    [Fact]
+    public async Task Resolver_MapsAfterStoryToSecondInstallment()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("base", "CLANNAD", 2007, MetadataSubjectKind.Series, 0),
+                Candidate(
+                    "after",
+                    "CLANNAD 〜AFTER STORY〜",
+                    2008,
+                    MetadataSubjectKind.Series,
+                    1),
+                Candidate(
+                    "tomoyo",
+                    "CLANNAD 另一个世界 智代篇",
+                    2008,
+                    MetadataSubjectKind.Series,
+                    2),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["CLANNAD"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "ja",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("after", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.Contains(
+                "installment=request:2,candidate:2",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
         var resolver = new MetadataResolver(
@@ -516,6 +634,22 @@ public sealed class MetadataResolverTests
             year,
             rank);
 
+
+    private static MetadataSearchCandidate CandidateOptionalYear(
+        string id,
+        string title,
+        int? year,
+        MetadataSubjectKind kind,
+        int rank) =>
+        new(
+            new MetadataProviderItemId("fake", id, kind),
+            new MetadataTitles(
+                title,
+                title,
+                new Dictionary<string, string>(),
+                Array.Empty<string>()),
+            year,
+            rank);
 
     private static MetadataSearchCandidate CandidateWithAliases(
         string id,
