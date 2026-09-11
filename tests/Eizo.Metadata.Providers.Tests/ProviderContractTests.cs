@@ -39,7 +39,8 @@ public sealed class ProviderContractTests
         var provider = new BangumiMetadataProvider(
             new HttpClient(handler),
             new BangumiMetadataProviderOptions(
-                "KiYouJyo/Eizo/0.3.6 (https://github.com/KiYouJyo/Eizo)"));
+                "KiYouJyo/Eizo/0.3.6 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 0));
 
         var result = await provider.SearchAsync(
             new MetadataSearchRequest(
@@ -56,6 +57,134 @@ public sealed class ProviderContractTests
         Assert.Equal(MetadataSubjectKind.Series, candidate.Id.Kind);
         Assert.Equal("攻壳机动队 STAND ALONE COMPLEX", candidate.Titles.Primary);
         Assert.Equal(2002, candidate.Year);
+    }
+
+
+    [Fact]
+    public async Task Bangumi_SearchRunsAllStrongQueryVariantsBeforeTruncation()
+    {
+        var postCount = 0;
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            postCount++;
+
+            return Json("""
+                {
+                  "data": [
+                    {
+                      "id": 100,
+                      "name": "LUPIN THE IIIRD",
+                      "name_cn": "鲁邦三世",
+                      "date": "1977-10-03",
+                      "platform": "TV"
+                    },
+                    {
+                      "id": 101,
+                      "name": "LUPIN THE IIIRD PART2",
+                      "name_cn": "鲁邦三世 PART2",
+                      "date": "1977-10-03",
+                      "platform": "TV"
+                    }
+                  ],
+                  "total": 2,
+                  "limit": 2,
+                  "offset": 0
+                }
+                """);
+        });
+
+        var provider = new BangumiMetadataProvider(
+            new HttpClient(handler),
+            new BangumiMetadataProviderOptions(
+                "KiYouJyo/Eizo/0.3.6 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 0));
+
+        _ = await provider.SearchAsync(
+            new MetadataSearchRequest(
+                ["02.[1977-1980]鲁邦三世part2", "鲁邦三世part2"],
+                null,
+                MediaKind.SeriesEpisode,
+                null,
+                1,
+                "zh-CN",
+                2),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, postCount);
+    }
+
+    [Fact]
+    public async Task Bangumi_SearchEnrichesTopCandidateWithInfoboxAliases()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Json("""
+                    {
+                      "data": [
+                        {
+                          "id": 1428,
+                          "name": "鋼の錬金術師 FULLMETAL ALCHEMIST",
+                          "name_cn": "钢之炼金术师 FULLMETAL ALCHEMIST",
+                          "date": "2009-04-05",
+                          "platform": "TV",
+                          "rating": { "score": 9.0 }
+                        }
+                      ],
+                      "total": 1,
+                      "limit": 10,
+                      "offset": 0
+                    }
+                    """);
+            }
+
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Contains("/v0/subjects/1428", request.RequestUri!.AbsolutePath, StringComparison.Ordinal);
+            return Json("""
+                {
+                  "id": 1428,
+                  "name": "鋼の錬金術師 FULLMETAL ALCHEMIST",
+                  "name_cn": "钢之炼金术师 FULLMETAL ALCHEMIST",
+                  "date": "2009-04-05",
+                  "platform": "TV",
+                  "summary": "",
+                  "eps": 64,
+                  "infobox": [
+                    {
+                      "key": "别名",
+                      "value": [
+                        { "k": "英文名", "v": "Fullmetal Alchemist: Brotherhood" }
+                      ]
+                    }
+                  ]
+                }
+                """);
+        });
+
+        var provider = new BangumiMetadataProvider(
+            new HttpClient(handler),
+            new BangumiMetadataProviderOptions(
+                "KiYouJyo/Eizo/0.3.6 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 1));
+
+        var result = await provider.SearchAsync(
+            new MetadataSearchRequest(
+                ["Fullmetal Alchemist: Brotherhood"],
+                2009,
+                MediaKind.SeriesEpisode,
+                null,
+                1,
+                "en",
+                10),
+            TestContext.Current.CancellationToken);
+
+        var candidate = Assert.Single(result);
+        Assert.Contains(
+            "Fullmetal Alchemist: Brotherhood",
+            candidate.Titles.Aliases,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
