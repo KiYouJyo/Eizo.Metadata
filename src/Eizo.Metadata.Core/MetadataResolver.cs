@@ -666,11 +666,11 @@ internal static class MetadataMatchScorer
 
         // Once Recognition has a concrete release year, a provider candidate
         // with no date should not remain almost tied with an otherwise identical
-        // exact-year subject. Missing data is still possible, so keep a modest
-        // neutral score rather than treating it as a mismatch.
+        // exact-year subject. Missing data is still possible, so keep a small
+        // non-zero score rather than treating it as a hard mismatch.
         if (candidate is null)
         {
-            return 0.25;
+            return 0.15;
         }
 
         var delta = Math.Abs(requested.Value - candidate.Value);
