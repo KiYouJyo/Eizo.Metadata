@@ -37,7 +37,7 @@ internal static class TitleExtractor
     private static readonly Regex[] DomainMarkerPatterns =
     {
         new(
-            @"(?<![A-Za-z0-9])(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?(?=\s*(?:$|\[|\(|【|\]|\)|】))",
+            @"(?<![\p{L}\p{N}])(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?(?=\s*(?:$|\[|\(|【|\]|\)|】))",
             Options,
             RegexTimeout),
         new(
@@ -94,6 +94,11 @@ internal static class TitleExtractor
 
     private static readonly Regex EmbeddedFranchiseYearRegex = new(
         @"(?<![A-Za-z0-9])(?<prefix>[A-Z]{2,8})[_-](?<year>(?:19|20)\d{2})(?!\d)",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+
+    private static readonly Regex EmptyBracketPairRegex = new(
+        @"\[\s*\]|\(\s*\)|\{\s*\}|【\s*】|「\s*」|『\s*』",
         RegexOptions.CultureInvariant,
         RegexTimeout);
 
@@ -554,7 +559,8 @@ internal static class TitleExtractor
             builder.Append(c);
         }
 
-        return TrimDecorativeEdges(builder.ToString());
+        return TrimDecorativeEdges(
+            EmptyBracketPairRegex.Replace(builder.ToString(), " "));
     }
 
     private static bool ShouldInsertSpace(StringBuilder builder, char next)

@@ -52,19 +52,31 @@ internal static class PathPreprocessor
 
     private static (string Stem, string? Extension) StripKnownExtension(string fileName)
     {
-        var dot = fileName.LastIndexOf('.');
-        if (dot <= 0 || dot == fileName.Length - 1)
+        var stem = fileName;
+        string? extension = null;
+
+        // Real-world libraries occasionally contain duplicated media suffixes
+        // such as ".mkv.mkv". Strip consecutive known media extensions while
+        // preserving the outermost extension as the physical container type.
+        while (true)
         {
-            return (fileName, null);
+            var dot = stem.LastIndexOf('.');
+            if (dot <= 0 || dot == stem.Length - 1)
+            {
+                break;
+            }
+
+            var candidate = stem[dot..];
+            if (!MediaExtensions.Contains(candidate))
+            {
+                break;
+            }
+
+            extension ??= candidate.ToLowerInvariant();
+            stem = stem[..dot];
         }
 
-        var extension = fileName[dot..];
-        if (!MediaExtensions.Contains(extension))
-        {
-            return (fileName, null);
-        }
-
-        return (fileName[..dot], extension.ToLowerInvariant());
+        return (stem, extension);
     }
 
     private static IReadOnlyList<RecognitionToken> Tokenize(string stem)

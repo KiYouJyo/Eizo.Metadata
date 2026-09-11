@@ -11,7 +11,7 @@ internal static class DomainClassifier
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SpecialMarkerRegex = new(
-        @"(?<![A-Za-z0-9])(?<kind>OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*(?<number>\d{1,3}(?:\.\d+)?))?(?=\s*(?:$|\[|\(|【|\]|\)|】))",
+        @"(?<![\p{L}\p{N}])(?<kind>OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*(?<number>\d{1,3}(?:\.\d+)?))?(?=\s*(?:$|\[|\(|【|\]|\)|】))",
         Options,
         RegexTimeout);
 

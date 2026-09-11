@@ -6,7 +6,7 @@ internal static class TokenClassifier
 {
     private static readonly HashSet<string> Sources = new(StringComparer.Ordinal)
     {
-        "WEB", "WEBDL", "WEBRIP", "BLURAY", "BDRIP", "BDREMUX", "HDTV",
+        "WEB", "WEBDL", "WEBRIP", "BLURAY", "BD", "DVD", "BDRIP", "BDREMUX", "HDTV",
         "DVDRIP", "REMUX", "BAHA", "NETFLIX", "NF", "AMZN", "CR", "ATX",
         "IQIYI", "YOUKU", "TENCENT", "DISNEYPLUS", "BILIBILI",
     };
@@ -18,13 +18,13 @@ internal static class TokenClassifier
 
     private static readonly HashSet<string> AudioCodecs = new(StringComparer.Ordinal)
     {
-        "AAC", "FLAC", "AC3", "EAC3", "DTS", "TRUEHD", "DOLBY", "ATMOS",
+        "AAC", "FLAC", "FLA", "AC3", "EAC3", "DTS", "TRUEHD", "DOLBY", "ATMOS",
         "OPUS", "MP3", "LPCM",
     };
 
     private static readonly HashSet<string> Languages = new(StringComparer.Ordinal)
     {
-        "CHT", "CHS", "JPN", "JAP", "JA", "ENG", "EN", "BIG5", "GB", "GBK",
+        "CHT", "CHS", "ZH", "JPN", "JAP", "JA", "ENG", "EN", "BIG5", "GB", "GBK",
         "SC", "TC", "简中", "繁中", "簡中", "繁體", "简体", "CHTC",
     };
 
@@ -95,7 +95,7 @@ internal static class TokenClassifier
             return TokenKind.Language;
         }
 
-        if (TechnicalQualifiers.Contains(key))
+        if (TechnicalQualifiers.Contains(key) || IsTechnicalQualifier(key))
         {
             return TokenKind.TechnicalGroup;
         }
@@ -130,7 +130,15 @@ internal static class TokenClassifier
 
     private static bool IsTechnicalGroup(string value)
     {
-        var parts = value.Split(
+        // Preserve dotted codec spellings (x.264 / h.265) as one token before
+        // splitting a composite technical group.
+        var normalized = value
+            .Replace("x.264", "x264", StringComparison.OrdinalIgnoreCase)
+            .Replace("x.265", "x265", StringComparison.OrdinalIgnoreCase)
+            .Replace("h.264", "h264", StringComparison.OrdinalIgnoreCase)
+            .Replace("h.265", "h265", StringComparison.OrdinalIgnoreCase);
+
+        var parts = normalized.Split(
             new[] { ' ', '\t', ',', '+', '/', ';', '-', '_', '.' },
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -158,13 +166,43 @@ internal static class TokenClassifier
             return true;
         }
 
+        var separator = key.IndexOf('X');
+        if (separator > 0 &&
+            separator < key.Length - 1 &&
+            int.TryParse(key[..separator], out var width) &&
+            int.TryParse(key[(separator + 1)..], out var height) &&
+            width is >= 320 and <= 8192 &&
+            height is >= 240 and <= 4320)
+        {
+            return true;
+        }
+
         if (!key.EndsWith('P') || key.Length < 2)
         {
             return false;
         }
 
-        return int.TryParse(key[..^1], out var height) &&
-               height is 360 or 480 or 576 or 720 or 1080 or 1440 or 2160 or 4320;
+        return int.TryParse(key[..^1], out var heightP) &&
+               heightP is 360 or 480 or 576 or 720 or 1080 or 1440 or 2160 or 4320;
+    }
+
+    private static bool IsTechnicalQualifier(string key)
+    {
+        if (key.EndsWith("AUDIO", StringComparison.Ordinal) &&
+            int.TryParse(key[..^"AUDIO".Length], out var audioTracks) &&
+            audioTracks is >= 1 and <= 32)
+        {
+            return true;
+        }
+
+        if (key.EndsWith("CH", StringComparison.Ordinal) &&
+            int.TryParse(key[..^2], out var channels) &&
+            channels is >= 1 and <= 128)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool IsBitDepth(string key)

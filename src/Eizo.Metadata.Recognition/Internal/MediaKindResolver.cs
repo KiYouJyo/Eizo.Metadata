@@ -63,7 +63,8 @@ internal static class MediaKindResolver
     }
 
     private static bool IsGenericMovieDirectoryDecision(DomainClassificationResult domain) =>
-        domain.Evidence.Any(static item => item.Code == "movie.directory") &&
+        domain.Evidence.Any(static item =>
+            item.Code is "movie.directory" or "movie.directory-hint") &&
         !domain.Evidence.Any(static item =>
             item.Code is "movie.japanese-marker" or "movie.english-marker");
 
