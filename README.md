@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.3 scope
+## Runtime 0.2.4 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -29,7 +29,7 @@ Provider-neutral metadata orchestration:
 - converts `RecognitionResult` into ranked provider search requests;
 - defines canonical subject, title, artwork and episode models;
 - runs multiple providers independently and isolates provider failures;
-- scores candidates using title similarity, year, media kind and provider rank;
+- scores candidates using ranked title aliases, year, media kind, season/installment semantics and provider rank;
 - only auto-resolves when both confidence and winner margin pass configured gates;
 - provides memory and file-backed TTL caches;
 - provides a caching provider decorator so network providers remain stateless.
@@ -99,14 +99,15 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.3 — field-report search normalization.**
+**Metadata Runtime 0.2.4 — field-report candidate resolver hardening.**
 
-Recognition remains stable while Metadata 0.2.3 targets the dominant failure mode from
-Eizo's large real-library report: recognized titles that fail provider search because
-library ordinals, season prefixes, trailing years, release separators or Unicode
-punctuation leak into the query. Normalization now happens at the resolver boundary so
-both FromRecognition callers and hosts that construct MetadataSearchRequest directly
-receive the same conservative search variants without lowering resolution thresholds.
+Recognition remains stable while Metadata 0.2.4 fixes the next bottleneck exposed by
+Eizo's 6,067-item real-library report. Weak standalone directory titles such as season
+labels and release-group names are excluded from provider queries; title-level years are
+recovered safely; Bangumi query variants are unioned before truncation; top candidates
+can be enriched with infobox aliases; and adjacent franchise entries are reranked with
+season/installment semantics. The existing auto-resolution confidence and lead thresholds
+remain unchanged.
 
 ## License
 
