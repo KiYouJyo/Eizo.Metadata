@@ -92,6 +92,11 @@ internal static class TitleExtractor
         Options,
         RegexTimeout);
 
+    private static readonly Regex EmbeddedFranchiseYearRegex = new(
+        @"(?<![A-Za-z0-9])(?<prefix>[A-Z]{2,8})[_-](?<year>(?:19|20)\d{2})(?!\d)",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+
     private static readonly HashSet<string> GenericDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "ANIME", "ANIMES", "TV", "TV SERIES", "SERIES", "DRAMA", "DRAMAS",
@@ -406,6 +411,7 @@ internal static class TitleExtractor
         var yearTokens = path.Tokens
             .Where(token =>
                 token.Kind == TokenKind.Year &&
+                !IsEmbeddedFranchiseYear(path, token) &&
                 (technicalSuffix is null ||
                  token.Start >= technicalSuffix.StartIndex))
             .ToArray();
@@ -427,6 +433,24 @@ internal static class TitleExtractor
         {
             Mark(removal, year.Start, year.Length);
         }
+    }
+
+    private static bool IsEmbeddedFranchiseYear(
+        NormalizedMediaPath path,
+        RecognitionToken token)
+    {
+        foreach (Match match in EmbeddedFranchiseYearRegex.Matches(path.Stem))
+        {
+            var year = match.Groups["year"];
+            if (year.Success &&
+                token.Start >= year.Index &&
+                token.Start < year.Index + year.Length)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string CleanDirectoryTitle(string raw)
