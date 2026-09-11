@@ -107,6 +107,114 @@ public sealed class MetadataResolver
             : await provider.GetSubjectAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<MetadataEnrichmentResult> EnrichAsync(
+        MetadataSearchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var resolution = await ResolveAsync(request, cancellationToken).ConfigureAwait(false);
+        var errors = resolution.ProviderErrors.ToList();
+
+        if (!resolution.IsResolved || resolution.Best is null)
+        {
+            return new MetadataEnrichmentResult(
+                resolution,
+                Subject: null,
+                Episode: null,
+                errors);
+        }
+
+        var id = resolution.Best.Candidate.Id;
+        var provider = _providers.FirstOrDefault(item =>
+            string.Equals(item.Name, id.Provider, StringComparison.OrdinalIgnoreCase));
+
+        if (provider is null)
+        {
+            errors.Add(new MetadataProviderError(
+                id.Provider,
+                "ProviderNotRegistered",
+                "The resolved provider is no longer registered."));
+            return new MetadataEnrichmentResult(resolution, null, null, errors);
+        }
+
+        MetadataSubject? subject;
+        try
+        {
+            subject = await provider
+                .GetSubjectAsync(id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            errors.Add(new MetadataProviderError(
+                provider.Name,
+                exception.GetType().Name,
+                exception.Message));
+            return new MetadataEnrichmentResult(resolution, null, null, errors);
+        }
+
+        MetadataEpisode? episode = null;
+        if (subject is not null &&
+            id.Kind == MetadataSubjectKind.Series &&
+            request.EpisodeNumber is not null)
+        {
+            try
+            {
+                var episodes = await provider
+                    .GetEpisodesAsync(id, request.SeasonNumber, cancellationToken)
+                    .ConfigureAwait(false);
+
+                episode = SelectEpisode(request, episodes);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                errors.Add(new MetadataProviderError(
+                    provider.Name,
+                    exception.GetType().Name,
+                    exception.Message));
+            }
+        }
+
+        return new MetadataEnrichmentResult(
+            resolution,
+            subject,
+            episode,
+            errors);
+    }
+
+    private static MetadataEpisode? SelectEpisode(
+        MetadataSearchRequest request,
+        IReadOnlyList<MetadataEpisode> episodes)
+    {
+        if (request.EpisodeNumber is null)
+        {
+            return null;
+        }
+
+        var expectedKind = request.RecognitionMediaKind == MediaKind.Special
+            ? MetadataEpisodeKind.Special
+            : MetadataEpisodeKind.Regular;
+
+        return episodes
+            .Where(item => item.EpisodeNumber == request.EpisodeNumber)
+            .OrderByDescending(item => item.Kind == expectedKind)
+            .ThenBy(item =>
+                request.SeasonNumber is not null &&
+                item.SeasonNumber == request.SeasonNumber
+                    ? 0
+                    : 1)
+            .FirstOrDefault();
+    }
+
     private static async Task<ProviderSearchOutcome> SearchProviderAsync(
         IMetadataProvider provider,
         MetadataSearchRequest request,
