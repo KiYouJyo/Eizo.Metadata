@@ -159,6 +159,11 @@ internal static class MetadataSearchTitleNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex SeasonCoverageRangeRegex = new(
+        @"(?<![\p{L}\p{N}])(?:S(?:EASON)?\s*0?\d{1,2}\s*(?:-|~|～|–|—|−|TO|THROUGH|至|到)\s*(?:S(?:EASON)?\s*)?0?\d{1,2}|第?\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*季\s*(?:-|~|～|–|—|−|TO|THROUGH|至|到)\s*第?\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*季)(?:\s*(?:全|全集|COMPLETE|ALL))?",
+        Options,
+        Timeout);
+
     private static readonly Regex TrailingYearRegex = new(
         @"(?:[. _-]+|\s*\()(?<year>(?:19|20)\d{2})\)?\s*$",
         Options,
@@ -209,6 +214,17 @@ internal static class MetadataSearchTitleNormalizer
             : null;
     }
 
+    internal static bool IsSeasonCoverageRange(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return SeasonCoverageRangeRegex.IsMatch(
+            value.Normalize(NormalizationForm.FormKC));
+    }
+
     internal static bool IsWeakStandaloneTitle(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -217,8 +233,14 @@ internal static class MetadataSearchTitleNormalizer
         }
 
         var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
+        var withoutCoverage = SeasonCoverageRangeRegex
+            .Replace(normalized, string.Empty)
+            .Trim();
+
         return normalized.Length < 2 ||
                WeakStandaloneTitleRegex.IsMatch(normalized) ||
+               (SeasonCoverageRangeRegex.IsMatch(normalized) &&
+                withoutCoverage is "" or "全" or "全集") ||
                BracketOnlyTitleRegex.IsMatch(normalized) ||
                ReleaseGroupOnlyRegex.IsMatch(normalized);
     }
@@ -237,6 +259,7 @@ internal static class MetadataSearchTitleNormalizer
 
         normalized = ProviderIdSuffixRegex.Replace(normalized, string.Empty);
         normalized = LeadingLibraryOrdinalRegex.Replace(normalized, string.Empty);
+        normalized = SeasonCoverageRangeRegex.Replace(normalized, " ");
         normalized = LeadingSeasonTokenRegex.Replace(normalized, string.Empty);
         normalized = TrailingYearRegex.Replace(normalized, string.Empty);
         normalized = MultiSeparatorRegex.Replace(normalized, " ");
