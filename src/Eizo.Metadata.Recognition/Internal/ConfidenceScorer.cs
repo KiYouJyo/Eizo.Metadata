@@ -167,6 +167,22 @@ internal static class ConfidenceScorer
             return;
         }
 
+        // A filename-derived title and its parent directory are often aliases,
+        // translations, romanizations, or release-folder labels for the same item.
+        // The 0.1.1 field report showed this was the sole source of 850 ambiguous
+        // results. Keep the parent as a metadata candidate, but do not turn a strong
+        // filename parse into a review item merely because the parent text differs.
+        if (IsAuthoritativeFilenameCandidate(first) &&
+            string.Equals(second.Source, "parent-directory", StringComparison.Ordinal) &&
+            first.Confidence >= 0.82)
+        {
+            evidence.Add(new RecognitionEvidence(
+                "confidence.title-cross-source-alias",
+                $"{first.Title} | {second.Title}",
+                0.0));
+            return;
+        }
+
         var delta = Math.Abs(first.Confidence - second.Confidence);
         if (delta <= 0.07)
         {
@@ -178,6 +194,14 @@ internal static class ConfidenceScorer
                 -0.07));
         }
     }
+
+    private static bool IsAuthoritativeFilenameCandidate(TitleCandidate candidate) =>
+        candidate.Source is
+            "filename" or
+            "filename-episode-title" or
+            "filename-extended-sxxexx" or
+            "bracket-sequence" or
+            "bracket-episode";
 
     private static void ApplyStructuralConflicts(
         MediaKind mediaKind,
@@ -196,6 +220,7 @@ internal static class ConfidenceScorer
         var onlyBareEpisode = episode.Evidence.Count > 0 &&
                               episode.Evidence.All(static item =>
                                   item.Code == "episode.bare-filename" ||
+                                  item.Code == "episode.bare-series-context" ||
                                   item.Code.StartsWith("season.directory", StringComparison.Ordinal) ||
                                   item.Code == "cour.directory");
 
