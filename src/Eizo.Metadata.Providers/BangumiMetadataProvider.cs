@@ -9,7 +9,7 @@ public sealed record BangumiMetadataProviderOptions(
     string UserAgent,
     string? AccessToken = null,
     string BaseAddress = "https://api.bgm.tv/",
-    int SearchAliasEnrichmentLimit = 5)
+    int SearchAliasEnrichmentLimit = 10)
 {
     // Binary-compatibility bridge for Eizo 0.3.6 and any host compiled against
     // Metadata <= 0.2.3. Optional parameters are substituted by the C# compiler;
@@ -19,7 +19,7 @@ public sealed record BangumiMetadataProviderOptions(
         string UserAgent,
         string? AccessToken,
         string BaseAddress)
-        : this(UserAgent, AccessToken, BaseAddress, SearchAliasEnrichmentLimit: 5)
+        : this(UserAgent, AccessToken, BaseAddress, SearchAliasEnrichmentLimit: 10)
     {
     }
 }

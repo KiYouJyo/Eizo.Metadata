@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.7 scope
+## Runtime 0.2.8 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,15 +99,15 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.7 — continuous-series and provider-recall pass.**
+**Metadata Runtime 0.2.8 — base-series disambiguation pass.**
 
-Metadata 0.2.7 targets the largest remaining real-library clusters without lowering
-confidence thresholds. Recognition can recover a conservative release year from named
-parent folders when episode filenames omit it; Bangumi searches retrieve a wider candidate
-window before local reranking; and unresolved exact-title season requests can probe the
-subject episode count so long-running shows such as Naruto are not penalized when a local
-Season folder is merely an arc/partition rather than a separate provider subject. Short
-series remain unresolved under the same condition, preventing CLANNAD-like sequel mistakes.
+Metadata 0.2.8 builds on the long-running-series and wider-recall work in 0.2.7. An
+unlabelled provider subject is treated as the natural season-one/base-series match; explicit
+OAD, OVA, live-event, trailer and other derivative subjects are structurally penalized when
+the request is for a regular series; known release years now separate dated subjects from
+otherwise identical undated duplicates; and the default Bangumi alias-enrichment window is
+expanded while preserving the legacy three-argument host ABI. Resolution thresholds remain
+at 0.82 confidence and 0.06 lead.
 
 ## License
 

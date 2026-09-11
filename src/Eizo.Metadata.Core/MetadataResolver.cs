@@ -384,6 +384,11 @@ internal static class MetadataMatchScorer
         RegexOptionsValue,
         RegexTimeout);
 
+    private static readonly Regex DerivativeMarkerRegex = new(
+        @"(?<![A-Z0-9])(?:OVA|OAD|SPECIAL|TRAILER|MENU|PV|CM)(?![A-Z0-9])|(?<![A-Z0-9])LIVE!(?![A-Z0-9])|(?<![A-Z0-9])(?:\d+(?:ST|ND|RD|TH)\s+)?LIVE(?=$|[\s!~～._-])|FAN\s*DISC|FANDISC|劇場版|剧场版|特別篇|特别篇|総集編|总集篇|演唱会|演唱會|音楽会|音樂會|音乐会",
+        RegexOptionsValue,
+        RegexTimeout);
+
     internal static bool HasExactTitleMatch(
         IReadOnlyList<string> requestedTitles,
         MetadataTitles candidateTitles)
@@ -654,9 +659,18 @@ internal static class MetadataMatchScorer
 
     private static double ScoreYear(int? requested, int? candidate)
     {
-        if (requested is null || candidate is null)
+        if (requested is null)
         {
             return 0.50;
+        }
+
+        // Once Recognition has a concrete release year, a provider candidate
+        // with no date should not remain almost tied with an otherwise identical
+        // exact-year subject. Missing data is still possible, so keep a small
+        // non-zero score rather than treating it as a hard mismatch.
+        if (candidate is null)
+        {
+            return 0.15;
         }
 
         var delta = Math.Abs(requested.Value - candidate.Value);
@@ -701,19 +715,52 @@ internal static class MetadataMatchScorer
             requestedInstallment = request.SeasonNumber;
         }
 
-        candidateInstallment = FindInstallment(candidate.Titles.EnumerateAll());
+        var candidateTitles = candidate.Titles.EnumerateAll().ToArray();
+        candidateInstallment = FindInstallment(candidateTitles);
 
+        var derivativeMismatch =
+            HasDerivativeMarker(candidateTitles) &&
+            !HasDerivativeMarker(request.Titles);
+
+        double score;
         if (requestedInstallment is null)
         {
-            return candidateInstallment is null ? 0.60 : 0.45;
+            score = candidateInstallment is null ? 0.60 : 0.45;
         }
-
-        if (candidateInstallment is null)
+        else if (candidateInstallment is null)
         {
-            return requestedInstallment <= 1 ? 0.65 : 0.20;
+            // Provider catalogs normally omit an explicit "season 1" marker
+            // from the base subject. Treat that as a strong structural match,
+            // rather than penalizing it simply for being unlabeled.
+            score = requestedInstallment == 1 ? 0.90 : 0.20;
+        }
+        else
+        {
+            score = requestedInstallment == candidateInstallment ? 1.0 : 0.0;
         }
 
-        return requestedInstallment == candidateInstallment ? 1.0 : 0.0;
+        // Bangumi maps OAD/OVA/live-event/special subjects to the broad Series
+        // kind, so MediaKind alone cannot separate them from a regular TV
+        // request. Penalize an explicit derivative marker only when the request
+        // itself did not ask for that derivative.
+        return derivativeMismatch
+            ? Math.Min(score, 0.15)
+            : score;
+    }
+
+    private static bool HasDerivativeMarker(IEnumerable<string> titles)
+    {
+        foreach (var title in titles)
+        {
+            if (!string.IsNullOrWhiteSpace(title) &&
+                DerivativeMarkerRegex.IsMatch(
+                    title.Normalize(NormalizationForm.FormKC)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int? FindInstallment(IEnumerable<string> titles)

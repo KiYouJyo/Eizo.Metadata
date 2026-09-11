@@ -30,7 +30,7 @@ public sealed class ProviderAbiCompatibilityTests
         Assert.Equal("KiYouJyo/Eizo/0.3.6", options.UserAgent);
         Assert.Null(options.AccessToken);
         Assert.Equal("https://api.bgm.tv/", options.BaseAddress);
-        Assert.Equal(5, options.SearchAliasEnrichmentLimit);
+        Assert.Equal(10, options.SearchAliasEnrichmentLimit);
     }
 
     [Fact]
