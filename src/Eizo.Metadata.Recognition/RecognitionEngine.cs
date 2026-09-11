@@ -38,7 +38,11 @@ public sealed class RecognitionEngine : IRecognitionEngine
         evidence.AddRange(domain.Evidence);
         evidence.AddRange(title.Evidence);
 
-        var year = TryGetYear(path, technicalSuffix, evidence);
+        var year = TryGetYear(
+            path,
+            technicalSuffix,
+            episode.SeasonNumber,
+            evidence);
         var mediaKindResolution = MediaKindResolver.Resolve(path, episode, domain);
         evidence.AddRange(mediaKindResolution.Evidence);
         var mediaKind = mediaKindResolution.MediaKind;
@@ -135,6 +139,7 @@ public sealed class RecognitionEngine : IRecognitionEngine
     private static int? TryGetYear(
         NormalizedMediaPath path,
         TechnicalSuffixResult? technicalSuffix,
+        int? seasonNumber,
         ICollection<RecognitionEvidence> evidence)
     {
         var token = technicalSuffix?.YearToken ??
@@ -147,9 +152,18 @@ public sealed class RecognitionEngine : IRecognitionEngine
         }
 
         // Library managers commonly put the release year in the show folder
-        // while episode filenames contain only SxxExx. Walk from the nearest
-        // parent outward and accept only a conservative standalone year range;
-        // this deliberately excludes title numbers such as SAC_2045.
+        // while episode filenames contain only SxxExx. For season 2+, however,
+        // that folder year is frequently the franchise premiere year rather than
+        // the installment year (CLANNAD is a representative failure), so do not
+        // promote parent-folder years into structured metadata for later seasons.
+        if (seasonNumber is > 1)
+        {
+            return null;
+        }
+
+        // Walk from the nearest parent outward and accept only a conservative
+        // standalone year range; this deliberately excludes title numbers such
+        // as SAC_2045.
         for (var index = path.NormalizedDirectorySegments.Count - 1;
              index >= 0;
              index--)
