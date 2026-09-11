@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.4 scope
+## Runtime 0.2.5 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,15 +99,13 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.4 — field-report candidate resolver hardening.**
+**Metadata Runtime 0.2.5 — Eizo 0.3.6 ABI compatibility hotfix.**
 
-Recognition remains stable while Metadata 0.2.4 fixes the next bottleneck exposed by
-Eizo's 6,067-item real-library report. Weak standalone directory titles such as season
-labels and release-group names are excluded from provider queries; title-level years are
-recovered safely; Bangumi query variants are unioned before truncation; top candidates
-can be enriched with infobox aliases; and adjacent franchise entries are reranked with
-season/installment semantics. The existing auto-resolution confidence and lead thresholds
-remain unchanged.
+Metadata 0.2.5 preserves all 0.2.4 resolver improvements while restoring the legacy
+`BangumiMetadataProviderOptions(string, string, string)` CLR constructor required by
+Eizo 0.3.6 hosts compiled against Metadata <= 0.2.3. The managed assembly ABI remains
+0.1.0.0, and regression tests now explicitly verify the host-facing constructor so future
+provider-option additions cannot silently break external runtime updates.
 
 ## License
 
