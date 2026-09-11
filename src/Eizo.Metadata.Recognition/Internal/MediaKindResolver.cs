@@ -10,7 +10,7 @@ internal static class MediaKindResolver
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeriesDirectoryRegex = new(
-        @"(?:SEASON\s*0?\d{1,2}|(?<![A-Za-z0-9])S\s*0?\d{1,2}(?![A-Za-z0-9])|(?<![A-Za-z])PART\s*0?\d{1,2}(?!\d)|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ))",
+        @"(?:SEASON\s*0?\d{1,2}|(?<![A-Za-z0-9])S\s*0?\d{1,2}(?![A-Za-z0-9])|(?<![A-Za-z])PART\s*0?\d{1,2}(?!\d)|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ)|(?:^|[\s._-])TV(?:版|\s*SERIES)?(?:$|[\s._-])|^番(?:劇|剧)$)",
         Options,
         Timeout);
 
@@ -78,6 +78,7 @@ internal static class MediaKindResolver
                 "episode.bare-delimited" or
                 "episode.bracket-sequence" or
                 "episode.bracket-after-title" or
+                "episode.leading-numbered" or
                 "episode.bare-trailing-release-tag" ||
             item.Code.StartsWith("episode.named-ordinal.", StringComparison.Ordinal));
 
