@@ -10,19 +10,19 @@ public sealed class RuntimeDiagnosticsTests
         var probe = MetadataRuntimeDiagnostics.Probe();
 
         Assert.True(probe.IsConsistent);
-        Assert.Equal("0.2.2", probe.Version);
+        Assert.Equal("0.2.3", probe.Version);
         Assert.Collection(
             probe.Modules.OrderBy(static module => module.AssemblyName),
             core =>
             {
                 Assert.Equal("Eizo.Metadata.Core", core.AssemblyName);
-                Assert.Equal("0.2.2", core.Version);
+                Assert.Equal("0.2.3", core.Version);
                 Assert.False(string.IsNullOrWhiteSpace(core.AssemblyPath));
             },
             providers =>
             {
                 Assert.Equal("Eizo.Metadata.Providers", providers.AssemblyName);
-                Assert.Equal("0.2.2", providers.Version);
+                Assert.Equal("0.2.3", providers.Version);
                 Assert.False(string.IsNullOrWhiteSpace(providers.AssemblyPath));
             });
     }
