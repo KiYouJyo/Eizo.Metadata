@@ -15,6 +15,7 @@ internal static class ReleaseNoiseClassifier
         "HULU",
         "DISNEY",
         "IQIYI",
+        "VIUTV",
         "YOUKU",
         "TENCENT",
     };
