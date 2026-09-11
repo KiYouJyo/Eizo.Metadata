@@ -73,6 +73,19 @@ public sealed class Stage6RobustnessTests
     }
 
     [Fact]
+    public void FinaleDetection_LongWhitespace_IsLinearAndDoesNotThrow()
+    {
+        var path =
+            "Library/Finale Test/Finale Test 9" +
+            new string(' ', 20_000) +
+            "END.mkv";
+
+        var result = _engine.Recognize(new RecognitionRequest(path));
+
+        Assert.True(result.IsFinalEpisode);
+    }
+
+    [Fact]
     public void LongCombiningSequence_DoesNotThrow()
     {
         var builder = new StringBuilder("Cafe");
