@@ -93,6 +93,73 @@ public sealed class MetadataResolverTests
         Assert.True(result.Best.Score >= 0.9);
     }
 
+
+    [Fact]
+    public async Task Resolver_UsesSeasonAndYearToPreferNamedSecondSeason()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("1", "夏目友人帐", 2008, MetadataSubjectKind.Series, 0),
+                Candidate("2", "续 夏目友人帐", 2009, MetadataSubjectKind.Series, 6),
+                Candidate("3", "夏目友人帐 叁", 2011, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["夏目友人帐"],
+                2009,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2", result.Best!.Candidate.Id.Value);
+        Assert.Contains(result.Best.Evidence, static value => value.Contains("installment=request:2,candidate:2", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Resolver_UsesExplicitZeroInstallmentToDisambiguateSteinsGateZero()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                CandidateWithAliases(
+                    "1",
+                    "命运石之门",
+                    2011,
+                    MetadataSubjectKind.Series,
+                    1,
+                    ["Steins;Gate"]),
+                CandidateWithAliases(
+                    "2",
+                    "命运石之门 0",
+                    2018,
+                    MetadataSubjectKind.Series,
+                    0,
+                    ["Steins;Gate 0"]),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Steins;Gate 0"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2", result.Best!.Candidate.Id.Value);
+    }
+
     [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
@@ -196,6 +263,24 @@ public sealed class MetadataResolverTests
                 title,
                 new Dictionary<string, string>(),
                 Array.Empty<string>()),
+            year,
+            rank);
+
+
+    private static MetadataSearchCandidate CandidateWithAliases(
+        string id,
+        string title,
+        int year,
+        MetadataSubjectKind kind,
+        int rank,
+        IReadOnlyList<string> aliases) =>
+        new(
+            new MetadataProviderItemId("fake", id, kind),
+            new MetadataTitles(
+                title,
+                title,
+                new Dictionary<string, string>(),
+                aliases),
             year,
             rank);
 

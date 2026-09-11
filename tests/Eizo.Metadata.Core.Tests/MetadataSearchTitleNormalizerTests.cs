@@ -43,6 +43,38 @@ public sealed class MetadataSearchTitleNormalizerTests
         Assert.Null(request.Year);
     }
 
+
+    [Fact]
+    public void FromRecognition_ExtractsTrailingYearFromFullWidthParentheses()
+    {
+        var request = MetadataSearchRequest.FromRecognition(
+            CreateRecognition("侧耳倾听（1995）"),
+            "zh-CN");
+
+        Assert.Equal(1995, request.Year);
+        Assert.Contains("侧耳倾听", request.Titles, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FromRecognition_DropsGenericSeasonAndReleaseGroupCandidates()
+    {
+        var recognition = CreateRecognition("Bungo Stray Dogs") with
+        {
+            TitleCandidates =
+            [
+                new RecognitionTitleCandidate("Bungo Stray Dogs", 0.94, "filename", true),
+                new RecognitionTitleCandidate("第二季", 0.80, "parent-directory", false),
+                new RecognitionTitleCandidate("[VCB-Studio]", 0.75, "parent-directory", false),
+            ],
+        };
+
+        var request = MetadataSearchRequest.FromRecognition(recognition, "zh-CN");
+
+        Assert.Contains("Bungo Stray Dogs", request.Titles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("第二季", request.Titles, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[VCB-Studio]", request.Titles, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static RecognitionResult CreateRecognition(string title) =>
         new(
             MediaKind.SeriesEpisode,

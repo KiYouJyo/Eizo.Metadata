@@ -90,7 +90,8 @@ public sealed record MetadataSearchRequest(
 
         static void AddTitleAndSearchVariant(List<string> destination, string? value)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (string.IsNullOrWhiteSpace(value) ||
+                MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(value))
             {
                 return;
             }
@@ -103,6 +104,7 @@ public sealed record MetadataSearchRequest(
 
             var normalized = MetadataSearchTitleNormalizer.Normalize(title);
             if (!string.IsNullOrWhiteSpace(normalized) &&
+                !MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(normalized) &&
                 !destination.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             {
                 destination.Add(normalized);
@@ -118,9 +120,20 @@ public sealed record MetadataSearchRequest(
             AddTitleAndSearchVariant(titles, candidate.Title);
         }
 
+        // Never turn a low-quality recognition into a broad provider query. If
+        // Recognition only produced a weak token, preserve it as a final fallback
+        // so the resolver remains debuggable, but do not mix it with strong titles.
+        if (titles.Count == 0 && !string.IsNullOrWhiteSpace(recognition.Title))
+        {
+            titles.Add(recognition.Title.Trim());
+        }
+
+        var year = recognition.Year ??
+                   MetadataSearchTitleNormalizer.TryExtractTrailingYear(recognition.Title);
+
         return new MetadataSearchRequest(
             titles.Take(6).ToArray(),
-            recognition.Year,
+            year,
             recognition.MediaKind,
             recognition.SeasonNumber,
             recognition.EpisodeNumber ?? recognition.SpecialNumber,
@@ -156,6 +169,21 @@ internal static class MetadataSearchTitleNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex WeakStandaloneTitleRegex = new(
+        @"^\s*(?:\d{1,2}[. _-]*)?(?:S(?:EASON)?\s*0?\d{1,2}|第\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*季|PART\s*\d{1,2}|COUR\s*\d{1,2}|VOL(?:UME)?\s*\d{1,3})\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex BracketOnlyTitleRegex = new(
+        @"^\s*(?:\[[^\]]{1,80}\]|【[^】]{1,80}】|\([^)]{1,80}\))\s*$",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    private static readonly Regex ReleaseGroupOnlyRegex = new(
+        @"^\s*[\p{L}\p{N}][\p{L}\p{N} ._&+-]{0,48}(?:STUDIO|RAWS?|SUBS?|字幕(?:组|組|社))\s*$",
+        Options,
+        Timeout);
+
     private static readonly Regex MultiSeparatorRegex = new(
         @"[._]+",
         RegexOptions.CultureInvariant,
@@ -165,6 +193,35 @@ internal static class MetadataSearchTitleNormalizer
         @"\s+",
         RegexOptions.CultureInvariant,
         Timeout);
+
+    internal static int? TryExtractTrailingYear(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
+        var match = TrailingYearRegex.Match(normalized);
+        return match.Success &&
+               int.TryParse(match.Groups["year"].Value, out var year)
+            ? year
+            : null;
+    }
+
+    internal static bool IsWeakStandaloneTitle(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
+        return normalized.Length < 2 ||
+               WeakStandaloneTitleRegex.IsMatch(normalized) ||
+               BracketOnlyTitleRegex.IsMatch(normalized) ||
+               ReleaseGroupOnlyRegex.IsMatch(normalized);
+    }
 
     internal static string Normalize(string value)
     {
@@ -196,6 +253,8 @@ internal static class MetadataSearchRequestNormalizer
         ArgumentNullException.ThrowIfNull(request);
 
         var titles = new List<string>();
+        string? fallback = null;
+
         foreach (var value in request.Titles)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -204,6 +263,13 @@ internal static class MetadataSearchRequestNormalizer
             }
 
             var title = value.Trim();
+            fallback ??= title;
+
+            if (MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(title))
+            {
+                continue;
+            }
+
             if (!titles.Contains(title, StringComparer.OrdinalIgnoreCase))
             {
                 titles.Add(title);
@@ -211,10 +277,16 @@ internal static class MetadataSearchRequestNormalizer
 
             var normalized = MetadataSearchTitleNormalizer.Normalize(title);
             if (!string.IsNullOrWhiteSpace(normalized) &&
+                !MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(normalized) &&
                 !titles.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             {
                 titles.Add(normalized);
             }
+        }
+
+        if (titles.Count == 0 && fallback is not null)
+        {
+            titles.Add(fallback);
         }
 
         return request with
