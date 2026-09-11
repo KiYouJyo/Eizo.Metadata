@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Eizo.Metadata.Recognition;
 
 namespace Eizo.Metadata.Core;
@@ -257,6 +258,31 @@ public sealed class MetadataResolver
 
 internal static class MetadataMatchScorer
 {
+    private const RegexOptions RegexOptionsValue =
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
+
+    private static readonly Regex SeasonRegex = new(
+        @"(?:^|[\s._-])S(?:EASON)?\s*0?(?<n>\d{1,2})(?:$|[\s._-])|SEASON\s*0?(?<n2>\d{1,2})|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*季|PART\s*0?(?<part>\d{1,2})",
+        RegexOptionsValue,
+        RegexTimeout);
+
+    private static readonly Regex RomanSuffixRegex = new(
+        @"(?:^|[\s._-])(?<roman>II|III|IV|V|VI|VII|VIII|IX|X|I)$",
+        RegexOptionsValue,
+        RegexTimeout);
+
+    private static readonly Regex ArabicSuffixRegex = new(
+        @"(?:^|[\s._-])(?<n>0|[1-9]|1\d|20)$",
+        RegexOptionsValue,
+        RegexTimeout);
+
+    private static readonly Regex ChineseSuffixRegex = new(
+        @"(?:^|[\s._-])(?<cn>壹|贰|貳|叁|參|肆|伍|陆|陸|柒|捌|玖|拾)$",
+        RegexOptionsValue,
+        RegexTimeout);
+
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
         MetadataSearchCandidate candidate)
@@ -272,14 +298,25 @@ internal static class MetadataMatchScorer
         var kindScore = ScoreKind(request.RecognitionMediaKind, candidate.Id.Kind);
         evidence.Add($"kind={kindScore:0.000}");
 
+        var structure = ScoreInstallment(request, candidate, out var requestedInstallment, out var candidateInstallment);
+        evidence.Add($"structure={structure:0.000}");
+        if (requestedInstallment is not null || candidateInstallment is not null)
+        {
+            evidence.Add($"installment=request:{requestedInstallment?.ToString(CultureInfo.InvariantCulture) ?? "-"},candidate:{candidateInstallment?.ToString(CultureInfo.InvariantCulture) ?? "-"}");
+        }
+
         var rankScore = 1.0 - Math.Min(Math.Max(candidate.ProviderRank, 0), 20) / 25.0;
         evidence.Add($"rank={rankScore:0.000}");
 
+        // Title remains the strongest signal, but year and installment semantics
+        // must be strong enough to disambiguate adjacent seasons in one franchise.
+        // Provider rank is only a tie-breaker; it must never override structure.
         var score =
-            titleScore * 0.68 +
-            yearScore * 0.14 +
-            kindScore * 0.12 +
-            rankScore * 0.06;
+            titleScore * 0.60 +
+            yearScore * 0.15 +
+            kindScore * 0.10 +
+            structure * 0.11 +
+            rankScore * 0.04;
 
         return new MetadataResolutionCandidate(
             candidate,
@@ -297,16 +334,24 @@ internal static class MetadataMatchScorer
             .ToArray();
 
         var best = 0.0;
-        foreach (var requested in requestedTitles)
+        for (var index = 0; index < requestedTitles.Count; index++)
         {
-            if (string.IsNullOrWhiteSpace(requested))
+            var requested = requestedTitles[index];
+            if (string.IsNullOrWhiteSpace(requested) ||
+                MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(requested))
             {
                 continue;
             }
 
+            // Recognition's primary title is most trustworthy. Later title
+            // candidates remain useful aliases but cannot dominate solely
+            // because they contain a generic fragment.
+            var requestWeight = Math.Max(0.82, 1.0 - index * 0.04);
+
             foreach (var candidate in candidates)
             {
-                best = Math.Max(best, TitleSimilarity(requested, candidate));
+                var value = TitleSimilarity(requested, candidate) * requestWeight;
+                best = Math.Max(best, value);
                 if (best >= 1.0)
                 {
                     return 1.0;
@@ -331,8 +376,8 @@ internal static class MetadataMatchScorer
             return 1.0;
         }
 
-        if (a.Length >= 4 &&
-            b.Length >= 4 &&
+        if (a.Length >= 3 &&
+            b.Length >= 3 &&
             (a.Contains(b, StringComparison.Ordinal) ||
              b.Contains(a, StringComparison.Ordinal)))
         {
@@ -434,4 +479,155 @@ internal static class MetadataMatchScorer
 
         return expected == candidateKind ? 1.0 : 0.0;
     }
+
+    private static double ScoreInstallment(
+        MetadataSearchRequest request,
+        MetadataSearchCandidate candidate,
+        out int? requestedInstallment,
+        out int? candidateInstallment)
+    {
+        requestedInstallment = FindInstallment(request.Titles);
+        if (requestedInstallment is null && request.SeasonNumber is > 0)
+        {
+            requestedInstallment = request.SeasonNumber;
+        }
+
+        candidateInstallment = FindInstallment(candidate.Titles.EnumerateAll());
+
+        if (requestedInstallment is null)
+        {
+            return candidateInstallment is null ? 0.60 : 0.45;
+        }
+
+        if (candidateInstallment is null)
+        {
+            return requestedInstallment <= 1 ? 0.65 : 0.20;
+        }
+
+        return requestedInstallment == candidateInstallment ? 1.0 : 0.0;
+    }
+
+    private static int? FindInstallment(IEnumerable<string> titles)
+    {
+        foreach (var title in titles)
+        {
+            var value = title.Normalize(NormalizationForm.FormKC).Trim();
+            if (value.Length == 0)
+            {
+                continue;
+            }
+
+            if (value.StartsWith("续", StringComparison.Ordinal) ||
+                value.StartsWith("続", StringComparison.Ordinal))
+            {
+                return 2;
+            }
+
+            var season = SeasonRegex.Match(value);
+            if (season.Success)
+            {
+                foreach (var groupName in new[] { "n", "n2", "part" })
+                {
+                    if (int.TryParse(season.Groups[groupName].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) &&
+                        number is >= 0 and <= 20)
+                    {
+                        return number;
+                    }
+                }
+
+                var chinese = ParseChineseNumber(season.Groups["cn"].Value);
+                if (chinese is not null)
+                {
+                    return chinese;
+                }
+            }
+
+            var roman = RomanSuffixRegex.Match(value);
+            if (roman.Success)
+            {
+                return ParseRoman(roman.Groups["roman"].Value);
+            }
+
+            var chineseSuffix = ChineseSuffixRegex.Match(value);
+            if (chineseSuffix.Success)
+            {
+                var chinese = ParseChineseNumber(chineseSuffix.Groups["cn"].Value);
+                if (chinese is not null)
+                {
+                    return chinese;
+                }
+            }
+
+            var arabic = ArabicSuffixRegex.Match(value);
+            if (arabic.Success &&
+                int.TryParse(arabic.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var suffix))
+            {
+                return suffix;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ParseRoman(string value) =>
+        value.ToUpperInvariant() switch
+        {
+            "I" => 1,
+            "II" => 2,
+            "III" => 3,
+            "IV" => 4,
+            "V" => 5,
+            "VI" => 6,
+            "VII" => 7,
+            "VIII" => 8,
+            "IX" => 9,
+            "X" => 10,
+            _ => null,
+        };
+
+    private static int? ParseChineseNumber(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            return number is >= 0 and <= 20 ? number : null;
+        }
+
+        return value switch
+        {
+            "〇" or "零" => 0,
+            "一" or "壹" => 1,
+            "二" or "两" or "兩" or "贰" or "貳" => 2,
+            "三" or "叁" or "參" => 3,
+            "四" or "肆" => 4,
+            "五" or "伍" => 5,
+            "六" or "陆" or "陸" => 6,
+            "七" or "柒" => 7,
+            "八" or "捌" => 8,
+            "九" or "玖" => 9,
+            "十" or "拾" => 10,
+            _ when value.StartsWith("十", StringComparison.Ordinal) && value.Length == 2 =>
+                ParseChineseDigit(value[1]) is int ones ? 10 + ones : null,
+            _ => null,
+        };
+    }
+
+    private static int? ParseChineseDigit(char value) =>
+        value switch
+        {
+            '一' or '壹' => 1,
+            '二' or '两' or '兩' or '贰' or '貳' => 2,
+            '三' or '叁' or '參' => 3,
+            '四' or '肆' => 4,
+            '五' or '伍' => 5,
+            '六' or '陆' or '陸' => 6,
+            '七' or '柒' => 7,
+            '八' or '捌' => 8,
+            '九' or '玖' => 9,
+            _ => null,
+        };
 }
