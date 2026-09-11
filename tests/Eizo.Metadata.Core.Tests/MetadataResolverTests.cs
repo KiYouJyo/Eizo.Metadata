@@ -570,11 +570,22 @@ public sealed class MetadataResolverTests
             Task.FromResult<IReadOnlyList<MetadataEpisode>>(Array.Empty<MetadataEpisode>());
     }
 
-    private sealed class LongRunningSeriesProvider(
-        string name,
-        IReadOnlyList<MetadataSearchCandidate> candidates,
-        int episodeCount) : FakeProvider(name, candidates)
+    private sealed class LongRunningSeriesProvider
+        : FakeProvider
     {
+        private readonly MetadataSearchCandidate _candidate;
+        private readonly int _episodeCount;
+
+        public LongRunningSeriesProvider(
+            string name,
+            IReadOnlyList<MetadataSearchCandidate> candidates,
+            int episodeCount)
+            : base(name, candidates)
+        {
+            _candidate = candidates[0];
+            _episodeCount = episodeCount;
+        }
+
         public override Task<MetadataSubject?> GetSubjectAsync(
             MetadataProviderItemId id,
             CancellationToken cancellationToken = default) =>
@@ -582,15 +593,15 @@ public sealed class MetadataResolverTests
                 new MetadataSubject(
                     id,
                     new MetadataTitles(
-                        candidates[0].Titles.Primary,
-                        candidates[0].Titles.Original,
-                        candidates[0].Titles.Localized,
-                        candidates[0].Titles.Aliases),
+                        _candidate.Titles.Primary,
+                        _candidate.Titles.Original,
+                        _candidate.Titles.Localized,
+                        _candidate.Titles.Aliases),
                     null,
-                    candidates[0].Year is { } year
+                    _candidate.Year is { } year
                         ? new DateOnly(year, 1, 1)
                         : null,
-                    episodeCount,
+                    _episodeCount,
                     new MetadataArtwork(null, null, null),
                     new Dictionary<string, string> { [id.Provider] = id.Value }));
     }
