@@ -59,7 +59,7 @@ public sealed class MetadataResolverTests
             PreferredLanguage: "en",
             Limit: 10);
 
-        var result = await resolver.ResolveAsync(request);
+        var result = await resolver.ResolveAsync(request, TestContext.Current.CancellationToken);
 
         Assert.True(result.IsResolved);
         Assert.NotNull(result.Best);
@@ -86,7 +86,7 @@ public sealed class MetadataResolverTests
                 1,
                 1,
                 "ja",
-                10));
+                10), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsResolved);
         Assert.Single(result.ProviderErrors);
@@ -104,8 +104,8 @@ public sealed class MetadataResolverTests
         var request = new MetadataSearchRequest(
             ["CLANNAD"], 2007, MediaKind.SeriesEpisode, 1, 1, "ja", 10);
 
-        var first = await cached.SearchAsync(request);
-        var second = await cached.SearchAsync(request);
+        var first = await cached.SearchAsync(request, TestContext.Current.CancellationToken);
+        var second = await cached.SearchAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Single(first);
         Assert.Single(second);
