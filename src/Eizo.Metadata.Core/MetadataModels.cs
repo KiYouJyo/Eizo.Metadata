@@ -186,6 +186,42 @@ internal static class MetadataSearchTitleNormalizer
     }
 }
 
+internal static class MetadataSearchRequestNormalizer
+{
+    internal static MetadataSearchRequest Normalize(MetadataSearchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var titles = new List<string>();
+        foreach (var value in request.Titles)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var title = value.Trim();
+            if (!titles.Contains(title, StringComparer.OrdinalIgnoreCase))
+            {
+                titles.Add(title);
+            }
+
+            var normalized = MetadataSearchTitleNormalizer.Normalize(title);
+            if (!string.IsNullOrWhiteSpace(normalized) &&
+                !titles.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                titles.Add(normalized);
+            }
+        }
+
+        return request with
+        {
+            Titles = titles.Take(8).ToArray(),
+            Limit = Math.Clamp(request.Limit, 1, 25),
+        };
+    }
+}
+
 public sealed record MetadataSearchCandidate(
     MetadataProviderItemId Id,
     MetadataTitles Titles,
