@@ -1,9 +1,13 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj" />
+    <Project Path="src/Eizo.Metadata.Core/Eizo.Metadata.Core.csproj" />
+    <Project Path="src/Eizo.Metadata.Providers/Eizo.Metadata.Providers.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Eizo.Metadata.Recognition.Tests/Eizo.Metadata.Recognition.Tests.csproj" />
+    <Project Path="tests/Eizo.Metadata.Core.Tests/Eizo.Metadata.Core.Tests.csproj" />
+    <Project Path="tests/Eizo.Metadata.Providers.Tests/Eizo.Metadata.Providers.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
