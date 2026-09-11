@@ -1,13 +1,9 @@
 # Architecture
 
-## Repository boundary
+## Runtime layers
 
-`Eizo.Metadata` will eventually contain both offline Recognition and online metadata
-provider/orchestration projects, but these layers have intentionally different
-responsibilities.
-
-Recognition converts noisy path text into structured candidates. Metadata providers
-map those candidates to canonical external records.
+`Eizo.Metadata` intentionally separates deterministic path recognition from online
+metadata lookup.
 
 ```text
 Media path / filename
@@ -17,65 +13,115 @@ Eizo.Metadata.Recognition
         |
         | RecognitionResult
         v
-future metadata orchestration
+Eizo.Metadata.Core
         |
-        +--> TMDB provider
-        +--> AniList provider
-        +--> Bangumi provider
-        +--> other providers
+        | MetadataSearchRequest
+        | MetadataResolution
+        v
+Eizo.Metadata.Providers
+        |
+        +--> Bangumi public v0
+        +--> TMDB v3
 ```
 
-The dependency direction is one-way: future provider/orchestration projects may
-reference Recognition. Recognition must never reference them.
+Dependencies only point downward in that diagram:
 
-## Recognition pipeline
+- `Core -> Recognition`
+- `Providers -> Core`
+- `Recognition -> nothing in this repository`
 
-The planned internal pipeline is:
+Recognition must never reference Core or Providers.
+
+## Recognition boundary
+
+Recognition converts noisy path text into structured candidates. It is deterministic,
+offline, Unicode-safe and deliberately conservative when evidence conflicts.
+
+It owns:
+
+- title candidates;
+- media-kind hints;
+- season/cour/episode/special structure;
+- year and release-noise extraction;
+- confidence, ambiguity and explainable evidence.
+
+It does not own canonical external IDs, artwork, summaries or network calls.
+
+## Core metadata boundary
+
+Core translates Recognition output into provider-neutral search intent and external
+metadata decisions.
+
+`MetadataSearchRequest.FromRecognition` carries up to four ranked title candidates plus
+year, media kind, season and episode hints.
+
+`MetadataResolver`:
+
+1. queries providers independently;
+2. converts provider failures into `MetadataProviderError` instead of failing the whole
+   enrichment pass;
+3. de-duplicates provider/item IDs;
+4. scores title similarity, year, media-kind compatibility and provider result rank;
+5. requires both an absolute confidence threshold and a winner margin before automatic
+   resolution.
+
+This keeps uncertain matches reviewable instead of inventing certainty.
+
+## Provider boundary
+
+Providers implement `IMetadataProvider` and map remote schemas into Core contracts.
+
+### Bangumi
+
+Uses the public `api.bgm.tv/v0` surface. The host supplies an application-specific
+User-Agent and may optionally supply a bearer token. Basic search/details remain
+separate from any future user-account OAuth functionality.
+
+### TMDB
+
+Uses the v3 API with an application read-access bearer token supplied by Eizo. Movie and
+TV search paths remain distinct because TMDB models them as separate resources.
+
+## Cache boundary
+
+`CachedMetadataProvider` decorates any provider without changing its implementation.
+
+- search results: short TTL;
+- subject details: longer TTL;
+- episode lists: medium TTL;
+- memory cache: useful for one process/session;
+- file cache: hashed keys, JSON envelopes, expiration and atomic replacement.
+
+Cache corruption is treated as a miss. Cache contents must never become required for
+Recognition or playback.
+
+## Runtime packaging
+
+All product assemblies under `src/Eizo.Metadata.*` share the existing external
+Metadata update unit. The runtime manifest enumerates the modules included in a release.
+
+For Eizo 0.3.6 compatibility, the on-disk technical component identity and anchor remain
+`Eizo.Recognition` / `Eizo.Metadata.Recognition.dll`. Adding Core and Providers does
+not make the package self-contained and does not bypass the pending -> restart -> active
+component activation chain.
+
+## Host integration rule
+
+Eizo should use metadata enrichment asynchronously:
 
 ```text
-RecognitionRequest
-      |
-      v
-Path decomposition
-      |
-      v
-Unicode-safe normalization
-      |
-      v
-Tokenization / tag classification
-      |
-      +--> season & episode extractor
-      +--> title candidate extractor
-      +--> year extractor
-      +--> special/movie extractor
-      +--> release-noise classifier
-      |
-      v
-Candidate conflict resolution
-      |
-      v
-Confidence + evidence
-      |
-      v
-RecognitionResult
+scan / WebDAV listing
+       |
+       +--> Recognition -> catalog immediately usable
+       |
+       +--> Metadata resolver -> cached network enrichment
+                                  |
+                                  +--> canonical title
+                                  +--> provider IDs
+                                  +--> artwork
+                                  +--> summary
+                                  +--> episode metadata
 ```
 
-Each stage should preserve enough evidence to explain why a result was produced.
-
-## Hard rules
-
-1. No network access in Recognition.
-2. No file-system existence requirement.
-3. No WinUI, playback or provider dependency.
-4. Unicode/CJK text must be preserved unless a normalization step is explicitly
-   reversible or evidence-backed.
-5. Recognition must return an uncertain result rather than fabricate certainty.
-6. A filename rule must not silently depend on one provider's naming conventions.
-
-## Public contract policy
-
-The public contract should stay small. Internal token classes, regexes, scoring rules
-and parser stages remain internal unless Eizo needs them directly.
-
-Breaking contract changes are acceptable before the first stable package release, but
-they should be deliberate and documented.
+A slow or unavailable provider must not delay opening the media library or playing a
+known media item.

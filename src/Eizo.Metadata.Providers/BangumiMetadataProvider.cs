@@ -1,0 +1,392 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Eizo.Metadata.Core;
+
+namespace Eizo.Metadata.Providers;
+
+public sealed record BangumiMetadataProviderOptions(
+    string UserAgent,
+    string? AccessToken = null,
+    string BaseAddress = "https://api.bgm.tv/");
+
+public sealed class BangumiMetadataProvider : IMetadataProvider
+{
+    private const string ProviderName = "bangumi";
+    private readonly HttpClient _httpClient;
+    private readonly BangumiMetadataProviderOptions _options;
+
+    public BangumiMetadataProvider(
+        HttpClient httpClient,
+        BangumiMetadataProviderOptions options)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(_options.UserAgent);
+        if (_options.UserAgent.Contains('\r') || _options.UserAgent.Contains('\n'))
+        {
+            throw new ArgumentException("Bangumi User-Agent must not contain CR or LF.", nameof(options));
+        }
+
+        if (!Uri.TryCreate(_options.BaseAddress, UriKind.Absolute, out _))
+        {
+            throw new ArgumentException("Bangumi BaseAddress must be an absolute URI.", nameof(options));
+        }
+    }
+
+    public string Name => ProviderName;
+
+    public async Task<IReadOnlyList<MetadataSearchCandidate>> SearchAsync(
+        MetadataSearchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var titles = request.Titles
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToArray();
+
+        var candidates = new Dictionary<string, MetadataSearchCandidate>(StringComparer.Ordinal);
+        var rank = 0;
+
+        foreach (var title in titles)
+        {
+            using var message = CreateRequest(
+                HttpMethod.Post,
+                $"v0/search/subjects?limit={Math.Clamp(request.Limit, 1, 25)}&offset=0");
+            message.Content = JsonContent.Create(new
+            {
+                keyword = title,
+                sort = "match",
+                filter = new
+                {
+                    type = new[] { 2, 6 },
+                    nsfw = false,
+                },
+            });
+
+            using var response = await _httpClient
+                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            using var document = await JsonDocument.ParseAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!document.RootElement.TryGetProperty("data", out var data) ||
+                data.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var item in data.EnumerateArray())
+            {
+                var id = item.GetInt32("id");
+                if (id is null)
+                {
+                    continue;
+                }
+
+                var key = id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (candidates.ContainsKey(key))
+                {
+                    continue;
+                }
+
+                candidates[key] = MapCandidate(item, key, rank++);
+                if (candidates.Count >= request.Limit)
+                {
+                    break;
+                }
+            }
+
+            if (candidates.Count >= request.Limit)
+            {
+                break;
+            }
+        }
+
+        return candidates.Values
+            .OrderBy(static item => item.ProviderRank)
+            .Take(request.Limit)
+            .ToArray();
+    }
+
+    public async Task<MetadataSubject?> GetSubjectAsync(
+        MetadataProviderItemId id,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateId(id);
+
+        using var message = CreateRequest(HttpMethod.Get, $"v0/subjects/{Uri.EscapeDataString(id.Value)}");
+        using var response = await _httpClient
+            .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var root = document.RootElement;
+        var titles = MapTitles(root);
+        var date = root.GetDateOnly("date", "air_date");
+        var episodeCount = root.GetInt32("total_episodes") ?? root.GetInt32("eps");
+        var kind = MapKind(root);
+        var images = root.TryGetProperty("images", out var imageElement)
+            ? imageElement
+            : default;
+
+        var poster = images.ValueKind == JsonValueKind.Object
+            ? images.GetString("large") ?? images.GetString("common")
+            : null;
+        var thumbnail = images.ValueKind == JsonValueKind.Object
+            ? images.GetString("medium") ?? images.GetString("small")
+            : null;
+
+        var externalIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["bangumi"] = id.Value,
+        };
+
+        if (root.TryGetProperty("infobox", out var infoBox) &&
+            infoBox.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in infoBox.EnumerateArray())
+            {
+                var key = entry.GetString("key");
+                if (!string.Equals(key, "IMDb", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var imdb = ReadInfoboxValue(entry);
+                if (!string.IsNullOrWhiteSpace(imdb))
+                {
+                    externalIds["imdb"] = imdb;
+                }
+            }
+        }
+
+        return new MetadataSubject(
+            new MetadataProviderItemId(ProviderName, id.Value, kind),
+            titles,
+            root.GetString("summary"),
+            date,
+            episodeCount,
+            new MetadataArtwork(poster, BackdropUrl: null, thumbnail),
+            externalIds);
+    }
+
+    public async Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
+        MetadataProviderItemId id,
+        int? seasonNumber = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateId(id);
+
+        var result = new List<MetadataEpisode>();
+        var offset = 0;
+        const int limit = 200;
+
+        while (true)
+        {
+            using var message = CreateRequest(
+                HttpMethod.Get,
+                $"v0/episodes?subject_id={Uri.EscapeDataString(id.Value)}&limit={limit}&offset={offset}");
+            using var response = await _httpClient
+                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+
+            response.EnsureSuccessStatusCode();
+            using var document = await JsonDocument.ParseAsync(
+                    await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!document.RootElement.TryGetProperty("data", out var data) ||
+                data.ValueKind != JsonValueKind.Array)
+            {
+                break;
+            }
+
+            var count = 0;
+            foreach (var episode in data.EnumerateArray())
+            {
+                count++;
+                var episodeId = episode.GetInt32("id")?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (episodeId is null)
+                {
+                    continue;
+                }
+
+                var episodeKind = MapEpisodeKind(episode.GetInt32("type"));
+                var number = episode.GetDecimal("ep") ?? episode.GetDecimal("sort");
+
+                result.Add(new MetadataEpisode(
+                    episodeId,
+                    new MetadataProviderItemId(ProviderName, id.Value, id.Kind),
+                    SeasonNumber: null,
+                    number,
+                    episodeKind,
+                    MapTitles(episode),
+                    episode.GetString("desc"),
+                    episode.GetDateOnly("airdate"),
+                    ThumbnailUrl: null));
+            }
+
+            var total = document.RootElement.GetInt32("total");
+            offset += count;
+
+            if (count == 0 ||
+                count < limit ||
+                total is not null && offset >= total.Value)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    private HttpRequestMessage CreateRequest(HttpMethod method, string relativePath)
+    {
+        var baseAddress = new Uri(_options.BaseAddress, UriKind.Absolute);
+        var request = new HttpRequestMessage(method, new Uri(baseAddress, relativePath));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        if (!request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent))
+        {
+            request.Dispose();
+            throw new InvalidOperationException("Bangumi User-Agent could not be added.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.AccessToken))
+        {
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", _options.AccessToken);
+        }
+
+        return request;
+    }
+
+    private static MetadataSearchCandidate MapCandidate(
+        JsonElement item,
+        string id,
+        int rank) =>
+        new(
+            new MetadataProviderItemId(ProviderName, id, MapKind(item)),
+            MapTitles(item),
+            item.GetYear("date", "air_date"),
+            rank,
+            item.TryGetProperty("rating", out var rating) &&
+            rating.ValueKind == JsonValueKind.Object
+                ? rating.GetDouble("score")
+                : null);
+
+    private static MetadataTitles MapTitles(JsonElement item)
+    {
+        var original = item.GetString("name")?.Trim();
+        var chinese = item.GetString("name_cn")?.Trim();
+        var primary = !string.IsNullOrWhiteSpace(chinese) ? chinese : original ?? string.Empty;
+
+        var localized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(chinese))
+        {
+            localized["zh-CN"] = chinese;
+        }
+
+        var aliases = new List<string>();
+        if (!string.IsNullOrWhiteSpace(original) &&
+            !string.Equals(original, primary, StringComparison.OrdinalIgnoreCase))
+        {
+            aliases.Add(original);
+        }
+
+        return new MetadataTitles(primary, original, localized, aliases);
+    }
+
+    private static MetadataSubjectKind MapKind(JsonElement item)
+    {
+        var platform = item.GetString("platform") ?? string.Empty;
+        if (platform.Contains("剧场", StringComparison.OrdinalIgnoreCase) ||
+            platform.Contains("劇場", StringComparison.OrdinalIgnoreCase) ||
+            platform.Contains("电影", StringComparison.OrdinalIgnoreCase) ||
+            platform.Contains("電影", StringComparison.OrdinalIgnoreCase) ||
+            platform.Contains("映画", StringComparison.OrdinalIgnoreCase) ||
+            platform.Contains("MOVIE", StringComparison.OrdinalIgnoreCase))
+        {
+            return MetadataSubjectKind.Movie;
+        }
+
+        return MetadataSubjectKind.Series;
+    }
+
+    private static MetadataEpisodeKind MapEpisodeKind(int? type) =>
+        type switch
+        {
+            0 => MetadataEpisodeKind.Regular,
+            1 => MetadataEpisodeKind.Special,
+            2 => MetadataEpisodeKind.Opening,
+            3 => MetadataEpisodeKind.Ending,
+            4 => MetadataEpisodeKind.Trailer,
+            _ => MetadataEpisodeKind.Other,
+        };
+
+    private static string? ReadInfoboxValue(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("value", out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    return item.GetString();
+                }
+
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    var text = item.GetString("v");
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        return text;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void ValidateId(MetadataProviderItemId id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        if (!string.Equals(id.Provider, ProviderName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"Provider id '{id.Provider}' cannot be handled by Bangumi.",
+                nameof(id));
+        }
+    }
+}

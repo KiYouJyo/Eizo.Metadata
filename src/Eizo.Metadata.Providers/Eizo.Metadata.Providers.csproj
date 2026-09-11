@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Eizo.Metadata.Providers</AssemblyName>
+    <RootNamespace>Eizo.Metadata.Providers</RootNamespace>
+    <Description>Bangumi and TMDB metadata providers for Eizo.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Eizo.Metadata.Core/Eizo.Metadata.Core.csproj" />
+  </ItemGroup>
+</Project>

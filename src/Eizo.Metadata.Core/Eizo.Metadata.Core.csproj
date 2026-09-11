@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Eizo.Metadata.Core</AssemblyName>
+    <RootNamespace>Eizo.Metadata.Core</RootNamespace>
+    <Description>Provider-neutral metadata contracts, resolution and caching for Eizo.</Description>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Eizo.Metadata.Recognition/Eizo.Metadata.Recognition.csproj" />
+  </ItemGroup>
+</Project>
