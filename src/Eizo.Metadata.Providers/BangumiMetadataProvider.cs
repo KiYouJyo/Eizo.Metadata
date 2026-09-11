@@ -24,6 +24,11 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
         ArgumentException.ThrowIfNullOrWhiteSpace(_options.UserAgent);
+        if (_options.UserAgent.Contains('\r') || _options.UserAgent.Contains('\n'))
+        {
+            throw new ArgumentException("Bangumi User-Agent must not contain CR or LF.", nameof(options));
+        }
+
         if (!Uri.TryCreate(_options.BaseAddress, UriKind.Absolute, out _))
         {
             throw new ArgumentException("Bangumi BaseAddress must be an absolute URI.", nameof(options));
@@ -261,10 +266,10 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
         var request = new HttpRequestMessage(method, new Uri(baseAddress, relativePath));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-        if (!request.Headers.UserAgent.TryParseAdd(_options.UserAgent))
+        if (!request.Headers.TryAddWithoutValidation("User-Agent", _options.UserAgent))
         {
             request.Dispose();
-            throw new InvalidOperationException("Bangumi User-Agent is invalid.");
+            throw new InvalidOperationException("Bangumi User-Agent could not be added.");
         }
 
         if (!string.IsNullOrWhiteSpace(_options.AccessToken))
