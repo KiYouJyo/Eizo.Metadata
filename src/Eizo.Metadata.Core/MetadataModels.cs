@@ -103,7 +103,7 @@ public sealed record MetadataSearchRequest(
             recognition.Year,
             recognition.MediaKind,
             recognition.SeasonNumber,
-            recognition.EpisodeNumber,
+            recognition.EpisodeNumber ?? recognition.SpecialNumber,
             preferredLanguage,
             Math.Clamp(limit, 1, 25));
     }
@@ -151,6 +151,12 @@ public sealed record MetadataResolution(
     bool IsResolved,
     double Confidence,
     IReadOnlyList<MetadataResolutionCandidate> Candidates,
+    IReadOnlyList<MetadataProviderError> ProviderErrors);
+
+public sealed record MetadataEnrichmentResult(
+    MetadataResolution Resolution,
+    MetadataSubject? Subject,
+    MetadataEpisode? Episode,
     IReadOnlyList<MetadataProviderError> ProviderErrors);
 
 public sealed record MetadataResolverOptions(
