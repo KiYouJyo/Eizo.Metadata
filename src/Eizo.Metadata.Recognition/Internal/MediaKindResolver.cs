@@ -38,15 +38,21 @@ internal static class MediaKindResolver
                     });
             }
 
-            if (HasBareEpisodeIdentity(episode) && HasSeriesDirectoryContext(path))
+            if (HasBareEpisodeIdentity(episode) &&
+                (HasSeriesDirectoryContext(path) || HasTitledParentContext(path)))
             {
+                var hasSeriesDirectory = HasSeriesDirectoryContext(path);
                 return new MediaKindResolution(
                     MediaKind.SeriesEpisode,
                     new[]
                     {
                         new RecognitionEvidence(
-                            "media-kind.series-context-overrides-movie-directory",
-                            "bare-episode-with-series-directory",
+                            hasSeriesDirectory
+                                ? "media-kind.series-context-overrides-movie-directory"
+                                : "media-kind.titled-parent-overrides-movie-directory",
+                            hasSeriesDirectory
+                                ? "bare-episode-with-series-directory"
+                                : "bare-episode-with-titled-parent",
                             0.82),
                     });
             }
@@ -89,6 +95,30 @@ internal static class MediaKindResolver
     private static bool HasSeriesDirectoryContext(NormalizedMediaPath path) =>
         path.NormalizedDirectorySegments.Any(static directory =>
             SeriesDirectoryRegex.IsMatch(directory));
+
+    private static bool HasTitledParentContext(NormalizedMediaPath path)
+    {
+        if (path.NormalizedDirectorySegments.Count == 0)
+        {
+            return false;
+        }
+
+        var parent = path.NormalizedDirectorySegments[^1].Trim();
+        if (parent.Length < 2 ||
+            parent.Equals("MOVIE", StringComparison.OrdinalIgnoreCase) ||
+            parent.Equals("MOVIES", StringComparison.OrdinalIgnoreCase) ||
+            SeriesDirectoryRegex.IsMatch(parent))
+        {
+            return false;
+        }
+
+        return parent.Any(static c =>
+            char.IsLetter(c) ||
+            c is >= '\u3040' and <= '\u30ff' ||
+            c is >= '\u3400' and <= '\u4dbf' ||
+            c is >= '\u4e00' and <= '\u9fff' ||
+            c is >= '\uac00' and <= '\ud7af');
+    }
 }
 
 internal sealed record MediaKindResolution(
