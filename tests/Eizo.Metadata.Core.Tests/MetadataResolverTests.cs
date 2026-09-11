@@ -40,6 +40,32 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task Resolver_NormalizesDirectHostSearchRequestBeforeProviderCall()
+    {
+        var provider = new CapturingProvider("capture");
+        var resolver = new MetadataResolver([provider]);
+
+        _ = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["S01 攻壳机动队 STAND ALONE COMPLEX"],
+                2002,
+                MediaKind.SeriesEpisode,
+                1,
+                1,
+                "zh-CN",
+                10),
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(provider.LastTitles);
+        Assert.Equal(
+            [
+                "S01 攻壳机动队 STAND ALONE COMPLEX",
+                "攻壳机动队 STAND ALONE COMPLEX",
+            ],
+            provider.LastTitles);
+    }
+
+    [Fact]
     public async Task Resolver_PrefersExactTitleYearAndKindMatch()
     {
         var provider = new FakeProvider(
@@ -266,6 +292,34 @@ public sealed class MetadataResolverTests
             SearchCount++;
             return base.SearchAsync(request, cancellationToken);
         }
+    }
+
+    private sealed class CapturingProvider(string name) : IMetadataProvider
+    {
+        public string Name { get; } = name;
+
+        public IReadOnlyList<string>? LastTitles { get; private set; }
+
+        public Task<IReadOnlyList<MetadataSearchCandidate>> SearchAsync(
+            MetadataSearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastTitles = request.Titles.ToArray();
+            return Task.FromResult<IReadOnlyList<MetadataSearchCandidate>>(
+                Array.Empty<MetadataSearchCandidate>());
+        }
+
+        public Task<MetadataSubject?> GetSubjectAsync(
+            MetadataProviderItemId id,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<MetadataSubject?>(null);
+
+        public Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
+            MetadataProviderItemId id,
+            int? seasonNumber = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MetadataEpisode>>(
+                Array.Empty<MetadataEpisode>());
     }
 
     private sealed class ThrowingProvider(string name) : IMetadataProvider
