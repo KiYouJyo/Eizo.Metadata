@@ -70,6 +70,77 @@ public sealed class RealWorld014ReportRegressionTests
     }
 
     [Fact]
+    public void Recognize_ViuTvProviderTagDoesNotLeakIntoTitle()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/钢之炼金术师系列 (2003)/钢之炼金术师FA (2009)/[Skymoon-Raws]/[Skymoon-Raws] Fullmetal Alchemist - 01 [ViuTV][WEB-DL][1080p][AVC AAC].mp4"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(1m, result.EpisodeNumber);
+        Assert.Equal("Fullmetal Alchemist", result.Title);
+    }
+
+    [Fact]
+    public void Recognize_NumericOnlyFileUnderTitledParentIsSeriesEpisode()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest("movie/夏洛特/01.mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(1m, result.EpisodeNumber);
+        Assert.Equal("夏洛特", result.Title);
+        Assert.Contains(result.Evidence, static item =>
+            item.Code == "media-kind.titled-parent-overrides-movie-directory");
+    }
+
+    [Fact]
+    public void Recognize_MenuDirectoryIsSpecialAndChildIndexIsCompatible()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/S-死亡笔记（2006）/[DBD-Raws]/Menu/[DBD-Raws][SW笔记][D1][menu][01][1080P][BDRip][HEVC-10bit][FLAC].mkv"));
+
+        Assert.Equal(MediaKind.Special, result.MediaKind);
+        Assert.Equal(SpecialKind.Special, result.SpecialKind);
+        Assert.False(result.IsAmbiguous);
+    }
+
+    [Fact]
+    public void Recognize_TrailingEndAfterEpisodeIsFinalMarkerNotTitle()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/D-刀剑神域（2012）/2018.04 刀剑神域外传 暴风之铳 Gun Gale Online/[Moozzi2]/[Moozzi2] Sword Art Online Alternative Gun Gale Online - 12 END (BD 1920x1080 x.264 FLACx3).mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(12m, result.EpisodeNumber);
+        Assert.Equal("Sword Art Online Alternative Gun Gale Online", result.Title);
+        Assert.True(result.IsFinalEpisode);
+    }
+
+    [Fact]
+    public void Recognize_DuplicateCopySuffixAfterTechnicalTagDoesNotLeakIntoTitle()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/文豪野犬 (2016)/第三季/[Kamigami] Bungou Stray Dogs - 32 [1080p x265 Ma10p AAC](1).mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(32m, result.EpisodeNumber);
+        Assert.Equal("Bungou Stray Dogs", result.Title);
+    }
+
+    [Fact]
+    public void Recognize_OrdinaryParenthesizedNumberInTitleIsPreserved()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest("movie/Room (1)/Room (1).2015.1080p.BluRay.x265.mkv"));
+
+        Assert.Equal("Room (1)", result.Title);
+    }
+
+    [Fact]
     public void Recognize_RealSeasonConflictStillRequiresReview()
     {
         var result = _engine.Recognize(
