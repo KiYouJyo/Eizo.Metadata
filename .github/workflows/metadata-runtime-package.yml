@@ -7,8 +7,9 @@ on:
       - "codex/metadata-runtime-0.2.1"
       - "codex/metadata-runtime-0.2.3"
       - "codex/metadata-runtime-0.2.4"
-      - "codex/metadata-runtime-0.2.6"
-      - "codex/metadata-runtime-0.2.6"
+      - "codex/metadata-runtime-0.2.7"
+      - "codex/metadata-runtime-0.2.7"
+      - "codex/metadata-runtime-0.2.7"
   workflow_dispatch:
 
 permissions:
@@ -44,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.6'
+          $version = '0.2.7'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -121,28 +122,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.6-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.7-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.6-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.7-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.6
+      - name: Publish Metadata runtime v0.2.7
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.6 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.6 already exists; leaving the published release immutable.'
+          if gh release view v0.2.7 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.7 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.6 \
+          gh release create v0.2.7 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.6" \
-            --notes "Field-report reranking release. v0.2.6 preserves the Eizo 0.3.6 ABI bridge while strengthening season/part matching, equivalent installment markers, exact-title margins, and season-over-year disambiguation. Auto-resolution thresholds remain unchanged." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.6-x64.zip" \
+            --title "Eizo.Metadata v0.2.7" \
+            --notes "Continuous-series and recall release. v0.2.7 recovers release years from parent media folders, widens Bangumi candidate recall, and confirms long-running subjects before treating local Season folders as provider installments. Auto-resolution thresholds remain unchanged." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.7-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
