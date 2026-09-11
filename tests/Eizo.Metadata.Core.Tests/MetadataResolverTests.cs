@@ -95,6 +95,29 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task EnrichAsync_FetchesResolvedSubjectAndEpisode()
+    {
+        var provider = new EnrichmentProvider(
+            "catalog",
+            [Candidate("42", "CLANNAD", 2007, MetadataSubjectKind.Series, 0)]);
+
+        var resolver = new MetadataResolver([provider]);
+        var request = new MetadataSearchRequest(
+            ["CLANNAD"], 2007, MediaKind.SeriesEpisode, 1, 3, "ja", 10);
+
+        var result = await resolver.EnrichAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.NotNull(result.Subject);
+        Assert.NotNull(result.Episode);
+        Assert.Equal("CLANNAD", result.Subject.Titles.Primary);
+        Assert.Equal(3m, result.Episode.EpisodeNumber);
+        Assert.Empty(result.ProviderErrors);
+    }
+
+    [Fact]
     public async Task CachedProvider_AvoidsDuplicateSearchCalls()
     {
         var inner = new CountingProvider(
@@ -152,16 +175,60 @@ public sealed class MetadataResolverTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(_candidates);
 
-        public Task<MetadataSubject?> GetSubjectAsync(
+        public virtual Task<MetadataSubject?> GetSubjectAsync(
             MetadataProviderItemId id,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<MetadataSubject?>(null);
 
-        public Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
+        public virtual Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
             MetadataProviderItemId id,
             int? seasonNumber = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<MetadataEpisode>>(Array.Empty<MetadataEpisode>());
+    }
+
+    private sealed class EnrichmentProvider(
+        string name,
+        IReadOnlyList<MetadataSearchCandidate> candidates) : FakeProvider(name, candidates)
+    {
+        public override Task<MetadataSubject?> GetSubjectAsync(
+            MetadataProviderItemId id,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<MetadataSubject?>(
+                new MetadataSubject(
+                    id,
+                    new MetadataTitles(
+                        "CLANNAD",
+                        "CLANNAD",
+                        new Dictionary<string, string>(),
+                        Array.Empty<string>()),
+                    "Drama",
+                    new DateOnly(2007, 10, 4),
+                    24,
+                    new MetadataArtwork(null, null, null),
+                    new Dictionary<string, string> { [id.Provider] = id.Value }));
+
+        public override Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
+            MetadataProviderItemId id,
+            int? seasonNumber = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MetadataEpisode>>(
+            [
+                new MetadataEpisode(
+                    "ep-3",
+                    id,
+                    1,
+                    3m,
+                    MetadataEpisodeKind.Regular,
+                    new MetadataTitles(
+                        "涙のあとにもう一度",
+                        null,
+                        new Dictionary<string, string>(),
+                        Array.Empty<string>()),
+                    null,
+                    null,
+                    null),
+            ]);
     }
 
     private sealed class CountingProvider(
