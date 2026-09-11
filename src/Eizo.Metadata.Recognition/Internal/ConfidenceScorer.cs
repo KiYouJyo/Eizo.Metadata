@@ -29,7 +29,7 @@ internal static class ConfidenceScorer
             ref score,
             ref isAmbiguous,
             evidence);
-        ApplyStructuralConflicts(mediaKind, episode, domain, ref score, ref isAmbiguous, evidence);
+        ApplyStructuralConflicts(mediaKind, episode, title, domain, ref score, ref isAmbiguous, evidence);
         ApplyEvidencePenalties(episode, ref score, ref isAmbiguous, evidence);
 
         score = Math.Clamp(score, 0.0, 0.99);
@@ -225,6 +225,7 @@ internal static class ConfidenceScorer
     private static void ApplyStructuralConflicts(
         MediaKind mediaKind,
         EpisodeExtractionResult episode,
+        TitleExtractionResult title,
         DomainClassificationResult domain,
         ref double score,
         ref bool isAmbiguous,
@@ -237,7 +238,7 @@ internal static class ConfidenceScorer
         }
 
         if (mediaKind == MediaKind.Special &&
-            IsCompatibleSpecialEpisode(episode, domain))
+            IsCompatibleSpecialEpisode(episode, title, domain))
         {
             return;
         }
@@ -264,6 +265,7 @@ internal static class ConfidenceScorer
 
     private static bool IsCompatibleSpecialEpisode(
         EpisodeExtractionResult episode,
+        TitleExtractionResult title,
         DomainClassificationResult domain)
     {
         // S00E.. is the de-facto Specials convention used by Plex/Jellyfin-style
@@ -275,8 +277,45 @@ internal static class ConfidenceScorer
 
         // "OVA 02" can be observed by both the domain and episode analyzers.
         // Matching numbers are corroboration, not a structural conflict.
-        return domain.SpecialNumber is { } specialNumber &&
-               episode.EpisodeNumber == specialNumber;
+        if (domain.SpecialNumber is { } specialNumber &&
+            episode.EpisodeNumber == specialNumber)
+        {
+            return true;
+        }
+
+        var hasLeadingIndex = episode.Evidence.Any(static item =>
+            item.Code == "episode.leading-numbered");
+        var hasBareDelimitedIndex = episode.Evidence.Any(static item =>
+            item.Code == "episode.bare-delimited");
+
+        // Real libraries often prefix an explicit OVA/OAD/ONA with a collection
+        // index ("25_OVA1") or use the broadcast ordinal before a trailing [OVA].
+        // The explicit special marker is authoritative in those two narrow shapes.
+        if (domain.SpecialKind is SpecialKind.Ova or SpecialKind.Oad or SpecialKind.Ona &&
+            (hasLeadingIndex || hasBareDelimitedIndex))
+        {
+            return true;
+        }
+
+        // Disc menus and trailer collections commonly use [SPxx] for the group and
+        // a trailing "- 01" child index. Keep genuinely conflicting SxxExx + SPxx
+        // cases ambiguous; only suppress the bare child-index shape with an
+        // auxiliary-content title marker observed in the field report.
+        return hasBareDelimitedIndex &&
+               IsAuxiliarySpecialTitle(title.Title);
+    }
+
+    private static bool IsAuxiliarySpecialTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return false;
+        }
+
+        return title.Contains("MENU", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("TRAILER", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("TOKUTEN", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("特典", StringComparison.Ordinal);
     }
 
     private static void ApplyEvidencePenalties(

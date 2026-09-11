@@ -89,6 +89,13 @@ internal static class TechnicalSuffixAnalyzer
     {
         if (tokens[index].Kind != TokenKind.Year)
         {
+            if (tokens[index].Kind == TokenKind.Source &&
+                tokens[index].NormalizedValue is "BD" or "DVD" &&
+                HasSemanticContentBeforeNextStrongSignal(tokens, index))
+            {
+                return false;
+            }
+
             return true;
         }
 
@@ -105,6 +112,33 @@ internal static class TechnicalSuffixAnalyzer
             }
 
             if (IsStrongSignal(token))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasSemanticContentBeforeNextStrongSignal(
+        IReadOnlyList<RecognitionToken> tokens,
+        int start)
+    {
+        for (var i = start + 1; i < tokens.Count; i++)
+        {
+            var token = tokens[i];
+            if (token.Kind == TokenKind.Separator)
+            {
+                continue;
+            }
+
+            if (IsStrongSignal(token))
+            {
+                return false;
+            }
+
+            if (token.Kind is TokenKind.Text or TokenKind.BracketGroup &&
+                !ReleaseNoiseClassifier.IsProviderMetadataTag(token))
             {
                 return true;
             }

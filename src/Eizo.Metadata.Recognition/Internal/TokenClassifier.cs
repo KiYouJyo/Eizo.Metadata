@@ -24,7 +24,7 @@ internal static class TokenClassifier
 
     private static readonly HashSet<string> Languages = new(StringComparer.Ordinal)
     {
-        "CHT", "CHS", "ZH", "JPN", "JAP", "JA", "ENG", "EN", "BIG5", "GB", "GBK",
+        "CHT", "CHS", "ZH", "JPN", "JAP", "JA", "JP", "ENG", "EN", "BIG5", "GB", "GBK",
         "SC", "TC", "简中", "繁中", "簡中", "繁體", "简体", "CHTC",
     };
 
@@ -38,7 +38,7 @@ internal static class TokenClassifier
     {
         "NVENC", "MULTI", "SUB", "SUBS", "MULTISUB", "MULTISUBS", "DUAL",
         "DUALAUDIO", "HDR", "HDR10", "HDR10PLUS", "DV", "DOVI", "MA10P",
-        "ASS", "SRT", "PGS",
+        "HI10P", "HDMA", "ASS", "SRT", "PGS",
     };
 
     internal static TokenKind Classify(string value, bool bracketed)
@@ -200,6 +200,43 @@ internal static class TokenClassifier
             channels is >= 1 and <= 128)
         {
             return true;
+        }
+
+        if (key.StartsWith("YUV", StringComparison.Ordinal) &&
+            key.Contains('P') &&
+            key[3..].All(static c => char.IsDigit(c) || c == 'P'))
+        {
+            return true;
+        }
+
+        if (key.EndsWith("MIX", StringComparison.Ordinal) &&
+            int.TryParse(key[..^3], out var mixId) &&
+            mixId is >= 1 and <= 9999)
+        {
+            return true;
+        }
+
+        string[] countedTechnicalTokens =
+        [
+            "FLAC", "AAC", "AC3", "EAC3", "DTS", "TRUEHD",
+            "OPUS", "SRT", "ASS", "PGS"
+        ];
+
+        foreach (var token in countedTechnicalTokens)
+        {
+            if (key.StartsWith(token + "X", StringComparison.Ordinal) &&
+                int.TryParse(key[(token.Length + 1)..], out var suffixCount) &&
+                suffixCount is >= 1 and <= 32)
+            {
+                return true;
+            }
+
+            if (key.EndsWith(token, StringComparison.Ordinal) &&
+                int.TryParse(key[..^token.Length], out var prefixCount) &&
+                prefixCount is >= 1 and <= 32)
+            {
+                return true;
+            }
         }
 
         return false;
