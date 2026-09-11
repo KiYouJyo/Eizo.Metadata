@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Eizo.Metadata.Recognition.Internal;
 
 namespace Eizo.Metadata.Recognition;
@@ -126,6 +127,11 @@ public sealed class RecognitionEngine : IRecognitionEngine
         return result;
     }
 
+    private static readonly Regex DirectoryYearRegex = new(
+        @"(?<!\d)(?<year>19[6-9]\d|20[0-2]\d|203[0-5])(?!\d)",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(50));
+
     private static int? TryGetYear(
         NormalizedMediaPath path,
         TechnicalSuffixResult? technicalSuffix,
@@ -133,12 +139,36 @@ public sealed class RecognitionEngine : IRecognitionEngine
     {
         var token = technicalSuffix?.YearToken ??
                     path.Tokens.FirstOrDefault(static token => token.Kind == TokenKind.Year);
-        if (token is null || !int.TryParse(token.NormalizedValue, out var year))
+        if (token is not null &&
+            int.TryParse(token.NormalizedValue, out var year))
         {
-            return null;
+            evidence.Add(new RecognitionEvidence("year.token", token.NormalizedValue, 0.80));
+            return year;
         }
 
-        evidence.Add(new RecognitionEvidence("year.token", token.NormalizedValue, 0.80));
-        return year;
+        // Library managers commonly put the release year in the show folder
+        // while episode filenames contain only SxxExx. Walk from the nearest
+        // parent outward and accept only a conservative standalone year range;
+        // this deliberately excludes title numbers such as SAC_2045.
+        for (var index = path.NormalizedDirectorySegments.Count - 1;
+             index >= 0;
+             index--)
+        {
+            var segment = path.NormalizedDirectorySegments[index];
+            var match = DirectoryYearRegex.Match(segment);
+            if (!match.Success ||
+                !int.TryParse(match.Groups["year"].Value, out year))
+            {
+                continue;
+            }
+
+            evidence.Add(new RecognitionEvidence(
+                "year.parent-directory",
+                match.Groups["year"].Value,
+                0.68));
+            return year;
+        }
+
+        return null;
     }
 }
