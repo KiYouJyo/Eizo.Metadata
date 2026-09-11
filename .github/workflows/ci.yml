@@ -70,7 +70,7 @@ jobs:
             throw "Expected exactly one NuGet package, found $($packages.Count)."
           }
 
-          if ($packages[0].Name -ne 'Eizo.Metadata.Recognition.0.1.3.nupkg') {
+          if ($packages[0].Name -ne 'Eizo.Metadata.Recognition.0.1.4.nupkg') {
             throw "Unexpected package name: $($packages[0].Name)"
           }
 
