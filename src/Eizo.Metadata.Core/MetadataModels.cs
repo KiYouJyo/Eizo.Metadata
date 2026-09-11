@@ -76,6 +76,9 @@ public sealed record MetadataSearchRequest(
     string? PreferredLanguage,
     int Limit = 10)
 {
+    public MetadataSearchRequest ForProviderSearch() =>
+        MetadataSearchRequestNormalizer.Normalize(this);
+
     public static MetadataSearchRequest FromRecognition(
         RecognitionResult recognition,
         string? preferredLanguage = null,
