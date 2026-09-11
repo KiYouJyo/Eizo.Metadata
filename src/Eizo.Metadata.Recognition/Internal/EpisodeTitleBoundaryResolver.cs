@@ -20,6 +20,11 @@ internal static class EpisodeTitleBoundaryResolver
         Options,
         Timeout);
 
+    private static readonly Regex TrailingPartMarkerRegex = new(
+        @"\s*(?:前編|前篇|前编|後編|後篇|后编|后篇)\s*$",
+        Options,
+        Timeout);
+
     internal static EpisodeTitleExtractionResult Normalize(
         NormalizedMediaPath path,
         EpisodeExtractionResult episode,
@@ -35,6 +40,33 @@ internal static class EpisodeTitleBoundaryResolver
             path.Stem.Length > MaxBoundaryProbeLength)
         {
             return result;
+        }
+
+        if (episode.Evidence.Any(static item =>
+                item.Code == "episode.leading-numbered") &&
+            EpisodeBoundaryNormalizer.TryGetLeadingNumberedEpisode(
+                path,
+                out _,
+                out var leadingTitle))
+        {
+            var cleaned = TrailingPartMarkerRegex
+                .Replace(leadingTitle, string.Empty)
+                .Trim(' ', '.', '_', '-', '–', '—', '−');
+
+            if (IsLexicalEpisodeTitle(cleaned))
+            {
+                return new EpisodeTitleExtractionResult(
+                    cleaned,
+                    SeriesTitle: null,
+                    Confidence: 0.90,
+                    new[]
+                    {
+                        new RecognitionEvidence(
+                            "episode-title.leading-numbered",
+                            cleaned,
+                            0.90),
+                    });
+            }
         }
 
         var match = DotSeasonEpisodeRegex.Match(path.Stem);
