@@ -122,6 +122,75 @@ public sealed class MetadataResolver
         var resolution = await ResolveAsync(request, cancellationToken).ConfigureAwait(false);
         var errors = resolution.ProviderErrors.ToList();
 
+        IMetadataProvider? provider = null;
+        MetadataSubject? subject = null;
+
+        if (!resolution.IsResolved &&
+            resolution.Best is not null &&
+            CanProbeContinuousSeries(request, resolution))
+        {
+            var probeId = resolution.Best.Candidate.Id;
+            provider = _providers.FirstOrDefault(item =>
+                string.Equals(
+                    item.Name,
+                    probeId.Provider,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (provider is not null)
+            {
+                try
+                {
+                    subject = await provider
+                        .GetSubjectAsync(probeId, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (subject?.EpisodeCount is >= 48)
+                    {
+                        var promotedScore = Math.Max(
+                            resolution.Best.Score,
+                            Math.Min(1.0, _options.AutoResolveThreshold + 0.01));
+                        var promotedBest = resolution.Best with
+                        {
+                            Score = promotedScore,
+                            Evidence = resolution.Best.Evidence
+                                .Concat(
+                                [
+                                    $"continuous-series=episode-count:{subject.EpisodeCount}",
+                                    "installment=local-partition",
+                                ])
+                                .ToArray(),
+                        };
+
+                        var candidates = resolution.Candidates
+                            .Select(candidate =>
+                                candidate.Candidate.Id == promotedBest.Candidate.Id
+                                    ? promotedBest
+                                    : candidate)
+                            .ToArray();
+
+                        resolution = resolution with
+                        {
+                            Best = promotedBest,
+                            IsResolved = true,
+                            Confidence = promotedScore,
+                            Candidates = candidates,
+                        };
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // This is only a conservative confirmation probe. A failed
+                    // detail request must not turn an otherwise valid unresolved
+                    // result into a provider error or change fallback behavior.
+                    subject = null;
+                }
+            }
+        }
+
         if (!resolution.IsResolved || resolution.Best is null)
         {
             return new MetadataEnrichmentResult(
@@ -132,7 +201,7 @@ public sealed class MetadataResolver
         }
 
         var id = resolution.Best.Candidate.Id;
-        var provider = _providers.FirstOrDefault(item =>
+        provider ??= _providers.FirstOrDefault(item =>
             string.Equals(item.Name, id.Provider, StringComparison.OrdinalIgnoreCase));
 
         if (provider is null)
@@ -144,10 +213,9 @@ public sealed class MetadataResolver
             return new MetadataEnrichmentResult(resolution, null, null, errors);
         }
 
-        MetadataSubject? subject;
         try
         {
-            subject = await provider
+            subject ??= await provider
                 .GetSubjectAsync(id, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -195,6 +263,34 @@ public sealed class MetadataResolver
             subject,
             episode,
             errors);
+    }
+
+    private bool CanProbeContinuousSeries(
+        MetadataSearchRequest request,
+        MetadataResolution resolution)
+    {
+        if (resolution.Best is null ||
+            request.RecognitionMediaKind != MediaKind.SeriesEpisode ||
+            request.SeasonNumber is not > 1 ||
+            resolution.Best.Candidate.Id.Kind != MetadataSubjectKind.Series ||
+            resolution.Best.Score < Math.Max(0.74, _options.AutoResolveThreshold - 0.06) ||
+            !MetadataMatchScorer.HasExactTitleMatch(
+                request.Titles,
+                resolution.Best.Candidate.Titles) ||
+            MetadataMatchScorer.GetCandidateInstallment(
+                resolution.Best.Candidate) is not null)
+        {
+            return false;
+        }
+
+        var second = resolution.Candidates
+            .Skip(1)
+            .FirstOrDefault();
+        var lead = second is null
+            ? 1.0
+            : resolution.Best.Score - second.Score;
+
+        return lead >= _options.MinimumLead;
     }
 
     private static MetadataEpisode? SelectEpisode(
@@ -287,6 +383,26 @@ internal static class MetadataMatchScorer
         @"(?:^|[\s._-])(?<cn>壹|贰|貳|叁|參|肆|伍|陆|陸|柒|捌|玖|拾)$",
         RegexOptionsValue,
         RegexTimeout);
+
+    internal static bool HasExactTitleMatch(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles)
+    {
+        var candidateSet = candidateTitles
+            .EnumerateAll()
+            .Select(NormalizeTitle)
+            .Where(static value => value.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return requestedTitles
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(NormalizeTitle)
+            .Any(candidateSet.Contains);
+    }
+
+    internal static int? GetCandidateInstallment(
+        MetadataSearchCandidate candidate) =>
+        FindInstallment(candidate.Titles.EnumerateAll());
 
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,

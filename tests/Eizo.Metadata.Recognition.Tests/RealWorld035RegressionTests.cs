@@ -123,6 +123,41 @@ public sealed class RealWorld035RegressionTests
     }
 
     [Fact]
+    public void Recognize_RecoversYearFromNamedParentFolder()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/D-刀剑神域（2012）/Season 1/Sword Art Online S01E01.mkv"));
+
+        Assert.Equal(2012, result.Year);
+        Assert.Contains(result.Evidence, static item =>
+            item.Code == "year.parent-directory");
+    }
+
+    [Fact]
+    public void Recognize_DoesNotReuseFranchiseFolderYearForLaterSeason()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/CLANNAD (2007)/Season 2/CLANNAD S02E01.mkv"));
+
+        Assert.Equal(2, result.SeasonNumber);
+        Assert.Null(result.Year);
+        Assert.DoesNotContain(result.Evidence, static item =>
+            item.Code == "year.parent-directory");
+    }
+
+    [Fact]
+    public void Recognize_ParentYearDoesNotTreatFutureTitleNumberAsReleaseYear()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "Anime/攻壳机动队 SAC_2045/Season 1/S01E01.mkv"));
+
+        Assert.Null(result.Year);
+    }
+
+    [Fact]
     public void Recognize_ExplicitMovieMarkerStillWinsOverEpisodeLookingText()
     {
         var result = _engine.Recognize(
