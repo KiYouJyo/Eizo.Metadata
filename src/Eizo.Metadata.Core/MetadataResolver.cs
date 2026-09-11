@@ -360,12 +360,12 @@ internal static class MetadataMatchScorer
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeasonRegex = new(
-        @"(?:^|[\s._-])S(?:EASON)?\s*0?(?<n>\d{1,2})(?:$|[\s._-])|SEASON\s*0?(?<n2>\d{1,2})|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*(?:季|期)|PART\s*0?(?<part>\d{1,2})|(?<![A-Z0-9])(?<ord>\d{1,2})(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])",
+        @"(?:^|[\s._-])S(?:EASON)?\s*0?(?<n>\d{1,2})(?:$|[\s._-])|SEASON\s*0?(?<n2>\d{1,2})|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*(?:季|期)|PART\s*0?(?<part>\d{1,2})|(?<![A-Z0-9])(?<ord>\d{1,2})(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])|(?<after>AFTER\s*STORY)",
         RegexOptionsValue,
         RegexTimeout);
 
     private static readonly Regex FranchiseInstallmentRegex = new(
-        @"(?:^|[\s._-])S(?:EASON)?\s*0?\d{1,2}(?=$|[\s._-])|SEASON\s*0?\d{1,2}|第\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:季|期)|PART\s*0?\d{1,2}|(?<![A-Z0-9])\d{1,2}(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])",
+        @"(?:^|[\s._-])S(?:EASON)?\s*0?\d{1,2}(?=$|[\s._-])|SEASON\s*0?\d{1,2}|第\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:季|期)|PART\s*0?\d{1,2}|(?<![A-Z0-9])\d{1,2}(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])|AFTER\s*STORY",
         RegexOptionsValue,
         RegexTimeout);
 
@@ -381,6 +381,11 @@ internal static class MetadataMatchScorer
 
     private static readonly Regex ChineseSuffixRegex = new(
         @"(?:^|[\s._-])(?<cn>壹|贰|貳|叁|參|肆|伍|陆|陸|柒|捌|玖|拾)$",
+        RegexOptionsValue,
+        RegexTimeout);
+
+    private static readonly Regex SpecialSubjectMarkerRegex = new(
+        @"(?:^|[\s._-])(?:OVA|OAD|ONA|SPECIAL|SP)(?:$|[\s._-])|劇場版|剧场版|映画|电影|電影",
         RegexOptionsValue,
         RegexTimeout);
 
@@ -410,11 +415,15 @@ internal static class MetadataMatchScorer
     {
         var evidence = new List<string>();
 
+        var titleInstallment = FindInstallment(request.Titles);
         var structure = ScoreInstallment(
             request,
             candidate,
             out var requestedInstallment,
             out var candidateInstallment);
+        var strongInstallmentEvidence =
+            titleInstallment is not null ||
+            request.SeasonNumber is > 1;
 
         var titleScore = BestTitleScore(request.Titles, candidate.Titles);
         if (requestedInstallment is not null &&
@@ -447,11 +456,10 @@ internal static class MetadataMatchScorer
         var rankScore = 1.0 - Math.Min(Math.Max(candidate.ProviderRank, 0), 20) / 25.0;
         evidence.Add($"rank={rankScore:0.000}");
 
-        // When Recognition carries an explicit season/part identity, that
-        // structural evidence is more reliable than a series-level year. Real
-        // libraries frequently repeat the franchise premiere year in every
-        // season folder, so year must not pull a season-2 request back to season 1.
-        var score = requestedInstallment is not null
+        // Season 1 is commonly just the library's default bucket, so it
+        // should retain normal year discrimination. Season 2+ (or an installment
+        // explicitly encoded in the title) is strong structural evidence.
+        var score = strongInstallmentEvidence
             ? titleScore * 0.58 +
               yearScore * 0.07 +
               kindScore * 0.10 +
@@ -462,6 +470,15 @@ internal static class MetadataMatchScorer
               kindScore * 0.10 +
               structure * 0.11 +
               rankScore * 0.04;
+
+        if (request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
+            candidate.Id.Kind == MetadataSubjectKind.Series &&
+            candidate.Titles.EnumerateAll().Any(static title =>
+                SpecialSubjectMarkerRegex.IsMatch(title)))
+        {
+            score -= 0.04;
+            evidence.Add("special-subject-mismatch=-0.040");
+        }
 
         return new MetadataResolutionCandidate(
             candidate,
@@ -735,6 +752,11 @@ internal static class MetadataMatchScorer
             var season = SeasonRegex.Match(value);
             if (season.Success)
             {
+                if (season.Groups["after"].Success)
+                {
+                    return 2;
+                }
+
                 foreach (var groupName in new[] { "n", "n2", "part", "ord" })
                 {
                     if (int.TryParse(season.Groups[groupName].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) &&
