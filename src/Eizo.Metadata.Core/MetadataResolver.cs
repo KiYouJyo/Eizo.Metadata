@@ -264,7 +264,12 @@ internal static class MetadataMatchScorer
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(50);
 
     private static readonly Regex SeasonRegex = new(
-        @"(?:^|[\s._-])S(?:EASON)?\s*0?(?<n>\d{1,2})(?:$|[\s._-])|SEASON\s*0?(?<n2>\d{1,2})|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*季|PART\s*0?(?<part>\d{1,2})",
+        @"(?:^|[\s._-])S(?:EASON)?\s*0?(?<n>\d{1,2})(?:$|[\s._-])|SEASON\s*0?(?<n2>\d{1,2})|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*(?:季|期)|PART\s*0?(?<part>\d{1,2})|(?<![A-Z0-9])(?<ord>\d{1,2})(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])",
+        RegexOptionsValue,
+        RegexTimeout);
+
+    private static readonly Regex FranchiseInstallmentRegex = new(
+        @"(?:^|[\s._-])S(?:EASON)?\s*0?\d{1,2}(?=$|[\s._-])|SEASON\s*0?\d{1,2}|第\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:季|期)|PART\s*0?\d{1,2}|(?<![A-Z0-9])\d{1,2}(?:ST|ND|RD|TH)\s*(?:SEASON|SERIES|GIG|PART)(?![A-Z0-9])",
         RegexOptionsValue,
         RegexTimeout);
 
@@ -289,7 +294,26 @@ internal static class MetadataMatchScorer
     {
         var evidence = new List<string>();
 
+        var structure = ScoreInstallment(
+            request,
+            candidate,
+            out var requestedInstallment,
+            out var candidateInstallment);
+
         var titleScore = BestTitleScore(request.Titles, candidate.Titles);
+        if (requestedInstallment is not null &&
+            candidateInstallment == requestedInstallment)
+        {
+            var franchiseTitleScore = BestFranchiseTitleScore(
+                request.Titles,
+                candidate.Titles);
+            if (franchiseTitleScore > titleScore)
+            {
+                titleScore = franchiseTitleScore;
+                evidence.Add($"title-franchise={franchiseTitleScore:0.000}");
+            }
+        }
+
         evidence.Add($"title={titleScore:0.000}");
 
         var yearScore = ScoreYear(request.Year, candidate.Year);
@@ -298,7 +322,6 @@ internal static class MetadataMatchScorer
         var kindScore = ScoreKind(request.RecognitionMediaKind, candidate.Id.Kind);
         evidence.Add($"kind={kindScore:0.000}");
 
-        var structure = ScoreInstallment(request, candidate, out var requestedInstallment, out var candidateInstallment);
         evidence.Add($"structure={structure:0.000}");
         if (requestedInstallment is not null || candidateInstallment is not null)
         {
@@ -308,15 +331,21 @@ internal static class MetadataMatchScorer
         var rankScore = 1.0 - Math.Min(Math.Max(candidate.ProviderRank, 0), 20) / 25.0;
         evidence.Add($"rank={rankScore:0.000}");
 
-        // Title remains the strongest signal, but year and installment semantics
-        // must be strong enough to disambiguate adjacent seasons in one franchise.
-        // Provider rank is only a tie-breaker; it must never override structure.
-        var score =
-            titleScore * 0.60 +
-            yearScore * 0.15 +
-            kindScore * 0.10 +
-            structure * 0.11 +
-            rankScore * 0.04;
+        // When Recognition carries an explicit season/part identity, that
+        // structural evidence is more reliable than a series-level year. Real
+        // libraries frequently repeat the franchise premiere year in every
+        // season folder, so year must not pull a season-2 request back to season 1.
+        var score = requestedInstallment is not null
+            ? titleScore * 0.58 +
+              yearScore * 0.07 +
+              kindScore * 0.10 +
+              structure * 0.21 +
+              rankScore * 0.04
+            : titleScore * 0.60 +
+              yearScore * 0.15 +
+              kindScore * 0.10 +
+              structure * 0.11 +
+              rankScore * 0.04;
 
         return new MetadataResolutionCandidate(
             candidate,
@@ -362,6 +391,67 @@ internal static class MetadataMatchScorer
         return best;
     }
 
+    private static double BestFranchiseTitleScore(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles)
+    {
+        var candidates = candidateTitles
+            .EnumerateAll()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var best = 0.0;
+        for (var index = 0; index < requestedTitles.Count; index++)
+        {
+            var requested = requestedTitles[index];
+            if (string.IsNullOrWhiteSpace(requested) ||
+                MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(requested))
+            {
+                continue;
+            }
+
+            var requestWeight = Math.Max(0.82, 1.0 - index * 0.04);
+            var requestedBase = NormalizeFranchiseTitle(requested);
+            if (requestedBase.Length < 3)
+            {
+                continue;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var candidateBase = NormalizeFranchiseTitle(candidate);
+                if (candidateBase.Length < 3)
+                {
+                    continue;
+                }
+
+                var similarity = string.Equals(
+                    requestedBase,
+                    candidateBase,
+                    StringComparison.Ordinal)
+                        ? 0.98
+                        : TitleSimilarity(requestedBase, candidateBase) * 0.96;
+
+                best = Math.Max(best, similarity * requestWeight);
+            }
+        }
+
+        return best;
+    }
+
+    private static string NormalizeFranchiseTitle(string value)
+    {
+        var normalized = value
+            .Normalize(NormalizationForm.FormKC)
+            .ToUpperInvariant();
+
+        normalized = FranchiseInstallmentRegex.Replace(normalized, " ");
+        normalized = RomanSuffixRegex.Replace(normalized, " ");
+        normalized = ChineseSuffixRegex.Replace(normalized, " ");
+
+        return NormalizeTitle(normalized);
+    }
+
     private static double TitleSimilarity(string left, string right)
     {
         var a = NormalizeTitle(left);
@@ -382,7 +472,10 @@ internal static class MetadataMatchScorer
              b.Contains(a, StringComparison.Ordinal)))
         {
             var ratio = (double)Math.Min(a.Length, b.Length) / Math.Max(a.Length, b.Length);
-            return 0.82 + ratio * 0.12;
+            // A proper superset is often an OVA, movie, sequel or special
+            // sharing the base title. Keep containment useful for retrieval,
+            // but leave a meaningful margin behind an exact alias/title match.
+            return 0.78 + ratio * 0.12;
         }
 
         return BigramDice(a, b) * 0.90;
@@ -526,7 +619,7 @@ internal static class MetadataMatchScorer
             var season = SeasonRegex.Match(value);
             if (season.Success)
             {
-                foreach (var groupName in new[] { "n", "n2", "part" })
+                foreach (var groupName in new[] { "n", "n2", "part", "ord" })
                 {
                     if (int.TryParse(season.Groups[groupName].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var number) &&
                         number is >= 0 and <= 20)
