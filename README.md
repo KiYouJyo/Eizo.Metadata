@@ -2,66 +2,86 @@
 
 Metadata and offline media-recognition infrastructure for **Eizo**.
 
-The repository is intentionally built in layers. The first deliverable is
-`Eizo.Metadata.Recognition`: a deterministic, offline parser that turns noisy media
-paths and filenames into structured recognition candidates. Online metadata providers
-will be added only after the recognition contract is stable.
+The repository is split into three layers with a strict one-way dependency direction:
 
-## Current scope
+```text
+Eizo.Metadata.Recognition   deterministic, offline filename/path recognition
+            |
+            v
+Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
+            |
+            v
+Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
+```
+
+## Runtime 0.2.0 scope
 
 ### Eizo.Metadata.Recognition
 
-Responsibilities:
+Recognition 0.1.6 is frozen as the current parser baseline. It remains completely
+offline and provider-neutral. It extracts title candidates, media kind, year, season,
+episode, specials and confidence/evidence from local or WebDAV logical paths.
 
-- parse file and directory naming signals;
-- identify media-kind hints;
-- extract title candidates, season and episode information;
-- recognize specials, ranges, years and common release tags;
-- normalize noisy naming without destroying meaningful title text;
-- report confidence and evidence for every decision.
+### Eizo.Metadata.Core
 
-Non-responsibilities:
+Provider-neutral metadata orchestration:
 
-- no HTTP or provider API calls;
-- no TMDB, AniList, Bangumi or other provider-specific models;
-- no image download or metadata cache;
-- no WinUI or playback dependency;
-- no mutation of the user's media library.
+- converts `RecognitionResult` into ranked provider search requests;
+- defines canonical subject, title, artwork and episode models;
+- runs multiple providers independently and isolates provider failures;
+- scores candidates using title similarity, year, media kind and provider rank;
+- only auto-resolves when both confidence and winner margin pass configured gates;
+- provides memory and file-backed TTL caches;
+- provides a caching provider decorator so network providers remain stateless.
+
+### Eizo.Metadata.Providers
+
+Initial online providers:
+
+- **Bangumi** public `api.bgm.tv/v0` search, subject and episode APIs;
+- **TMDB** v3 movie/TV search, subject details, external IDs and season episodes.
+
+HTTP clients are injected by the host. Provider tests use fake HTTP handlers and never
+depend on live network availability.
+
+## Dependency rules
+
+```text
+Recognition
+    ^
+    |
+Core
+    ^
+    |
+Providers
+```
+
+Hard rules:
+
+1. Recognition has no network, provider, UI or playback dependencies.
+2. Core may consume Recognition contracts but has no provider-specific HTTP models.
+3. Providers depend on Core, never the other way around.
+4. One provider failing must not prevent another provider from resolving metadata.
+5. Eizo owns credentials and `HttpClient` lifetime; Metadata does not persist secrets.
+6. Cached metadata is disposable enrichment. Local media recognition and playback must
+   remain usable when every online provider is offline.
 
 ## Repository layout
 
 ```text
 src/
-  Eizo.Metadata.Recognition/        Offline recognition contracts and implementation
+  Eizo.Metadata.Recognition/
+  Eizo.Metadata.Core/
+  Eizo.Metadata.Providers/
 
 tests/
-  Eizo.Metadata.Recognition.Tests/  Unit, regression, corpus and fuzz tests
+  Eizo.Metadata.Recognition.Tests/
+  Eizo.Metadata.Core.Tests/
+  Eizo.Metadata.Providers.Tests/
 
 benchmarks/
-  Eizo.Metadata.Recognition.Benchmarks/  Repeatable 1K/10K/100K scan benchmark
-
-docs/
-  architecture.md                   Module boundary and dependency rules
-  recognition-plan.md               Recognition development stages and acceptance gates
-  testing.md                        Test corpus and quality strategy
-  recognition-performance.md        Stage 6 performance baseline and methodology
+  Eizo.Metadata.Recognition.Benchmarks/
 ```
-
-## Dependency rule
-
-```text
-Eizo
-  |
-  v
-Eizo.Metadata.Recognition
-  ^
-  |
-future Eizo.Metadata provider/orchestration projects
-```
-
-Recognition must remain provider-neutral and fully usable without network access.
-Future provider modules may consume Recognition results; Recognition must never depend
-on provider modules.
 
 ## Build
 
@@ -71,46 +91,20 @@ Requires the .NET 10 SDK.
 dotnet restore Eizo.Metadata.slnx
 dotnet build Eizo.Metadata.slnx -c Release
 dotnet test Eizo.Metadata.slnx -c Release
-dotnet pack Eizo.Metadata.slnx -c Release -o artifacts/packages
 ```
+
+The external Metadata runtime remains one update unit. The runtime package workflow
+automatically includes every `src/Eizo.Metadata.*` module while retaining
+`Eizo.Metadata.Recognition.dll` as the Eizo 0.3.6 compatibility anchor.
 
 ## Status
 
-**Recognition Stage 6 — corpus hardening and performance baseline.**
+**Metadata Runtime 0.2.0 — provider foundation.**
 
-Implemented so far:
-
-- provider-neutral Recognition contracts and default `RecognitionEngine`;
-- Unicode-safe path preprocessing and release-noise tokenization;
-- season/episode/range/decimal parsing;
-- filename and parent-directory title candidates;
-- public season and cour context;
-- OVA / OAD / ONA / SP / Specials / NCOP / NCED classification;
-- special numbering without treating specials as ordinary episodes;
-- Japanese/English movie marker classification;
-- Japanese `第N話` / `第N回`, `最終話`, `前編`, `後編`;
-- appended Japanese episode-name cleanup;
-- collision protection for title text such as `SPY x FAMILY`, `Special Ops`,
-  `Movie Night` and `OVA Project`;
-- deterministic evidence output with no network or disk dependency;
-- Windows/Linux CI, package validation and **939 passing tests**;
-- a **2,000-case sanitized Stage 6 golden corpus** with 100% expected-structure coverage;
-- a separate **400-case negative corpus** with **0/400 structural false positives**;
-- **1,000 seeded Unicode fuzz paths** plus adversarial long-input regression tests;
-- calibrated `Confidence` plus `RecognitionConfidenceLevel`;
-- explicit `IsAmbiguous` output for conflicting evidence;
-- ranked, deduplicated public title candidates for Metadata Provider search;
-- confidence evidence for title/episode/domain components, consensus and conflicts;
-- regression fixes for resolution suffixes such as `S01E03.1080p` and embedded
-  Japanese words such as `前編資料` / `最終話資料`;
-- repeatable CI benchmark artifacts for 1K / 10K / 100K scans;
-- current Ubuntu CI baseline: **59.5 ms / 603.6 ms / 2,789.3 ms** respectively.
-
-Recognition is now hardened enough for Stage 7 Eizo integration and metadata-provider
-work to begin without expanding the Recognition dependency boundary.
-
-See [docs/recognition-plan.md](docs/recognition-plan.md) for the staged development
-plan and acceptance criteria.
+Recognition is mature enough to remain stable while metadata enrichment moves forward.
+The next integration step is for Eizo to instantiate cached providers, feed
+`RecognitionResult` into `MetadataResolver`, persist selected provider IDs in its
+catalog, and asynchronously enrich UI records without blocking library scan/playback.
 
 ## License
 
