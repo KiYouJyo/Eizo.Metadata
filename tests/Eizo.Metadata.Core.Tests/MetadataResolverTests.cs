@@ -358,6 +358,59 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task EnrichAsync_PromotesExactLongRunningSeriesWhenLocalSeasonIsOnlyAPartition()
+    {
+        var provider = new LongRunningSeriesProvider(
+            "fake",
+            [Candidate("naruto", "火影忍者疾风传", 2007, MetadataSubjectKind.Series, 0)],
+            episodeCount: 500);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["火影忍者：疾风传"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("naruto", result.Resolution.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Resolution.Best.Evidence,
+            static value => value.StartsWith(
+                "continuous-series=episode-count:",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EnrichAsync_DoesNotPromoteShortSeriesAcrossLocalSeasonBoundary()
+    {
+        var provider = new LongRunningSeriesProvider(
+            "fake",
+            [Candidate("clannad", "CLANNAD", 2007, MetadataSubjectKind.Series, 0)],
+            episodeCount: 24);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["CLANNAD"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "ja",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Resolution.IsResolved);
+        Assert.Null(result.Subject);
+    }
+
+    [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
         var resolver = new MetadataResolver(
@@ -515,6 +568,31 @@ public sealed class MetadataResolverTests
             int? seasonNumber = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<MetadataEpisode>>(Array.Empty<MetadataEpisode>());
+    }
+
+    private sealed class LongRunningSeriesProvider(
+        string name,
+        IReadOnlyList<MetadataSearchCandidate> candidates,
+        int episodeCount) : FakeProvider(name, candidates)
+    {
+        public override Task<MetadataSubject?> GetSubjectAsync(
+            MetadataProviderItemId id,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<MetadataSubject?>(
+                new MetadataSubject(
+                    id,
+                    new MetadataTitles(
+                        candidates[0].Titles.Primary,
+                        candidates[0].Titles.Original,
+                        candidates[0].Titles.Localized,
+                        candidates[0].Titles.Aliases),
+                    null,
+                    candidates[0].Year is { } year
+                        ? new DateOnly(year, 1, 1)
+                        : null,
+                    episodeCount,
+                    new MetadataArtwork(null, null, null),
+                    new Dictionary<string, string> { [id.Provider] = id.Value }));
     }
 
     private sealed class EnrichmentProvider(
