@@ -128,16 +128,29 @@ public sealed class MetadataResolverTests
             year,
             rank);
 
-    private class FakeProvider(
-        string name,
-        IReadOnlyList<MetadataSearchCandidate> candidates) : IMetadataProvider
+    private class FakeProvider : IMetadataProvider
     {
-        public string Name { get; } = name;
+        private readonly IReadOnlyList<MetadataSearchCandidate> _candidates;
+
+        public FakeProvider(
+            string name,
+            IReadOnlyList<MetadataSearchCandidate> candidates)
+        {
+            Name = name;
+            _candidates = candidates
+                .Select(candidate => candidate with
+                {
+                    Id = candidate.Id with { Provider = name },
+                })
+                .ToArray();
+        }
+
+        public string Name { get; }
 
         public virtual Task<IReadOnlyList<MetadataSearchCandidate>> SearchAsync(
             MetadataSearchRequest request,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(candidates);
+            Task.FromResult(_candidates);
 
         public Task<MetadataSubject?> GetSubjectAsync(
             MetadataProviderItemId id,
