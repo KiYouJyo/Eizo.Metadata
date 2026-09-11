@@ -95,6 +95,99 @@ public sealed class MetadataResolverTests
 
 
     [Fact]
+    public async Task Resolver_CollectionSeasonRangeDoesNotOverrideCurrentFileSeason()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("s1", "鬼灭之刃", 2019, MetadataSubjectKind.Series, 0),
+                Candidate("s4", "鬼灭之刃 第四季", 2023, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["鬼灭之刃 S00-S05全", "鬼灭之刃"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 4,
+                EpisodeNumber: 3,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("s4", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value == "installment=request:4,candidate:4");
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value == "installment-source=recognition-season");
+    }
+
+    [Fact]
+    public async Task Resolver_CollectionSeasonRangeDoesNotFalseResolveLaterArcToBaseSubject()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("base", "鬼灭之刃", 2019, MetadataSubjectKind.Series, 0),
+                Candidate("arc", "鬼灭之刃 柱训练篇", 2024, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["鬼灭之刃 S00-S05全", "鬼灭之刃"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 5,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsResolved);
+        Assert.NotNull(result.Best);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value == "installment=request:5,candidate:-");
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value == "installment-source=recognition-season");
+    }
+
+    [Fact]
+    public async Task Resolver_ExplicitSequelTitleCanOverrideGenericSeasonOne()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("base", "CLANNAD", 2007, MetadataSubjectKind.Series, 0),
+                Candidate("after", "CLANNAD 〜AFTER STORY〜", 2008, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["CLANNAD AFTER STORY"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "ja",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("after", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value == "installment-source=title");
+    }
+
+    [Fact]
     public async Task Resolver_UsesSeasonAndYearToPreferNamedSecondSeason()
     {
         var provider = new FakeProvider(
