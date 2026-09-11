@@ -95,6 +95,28 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task CachedProvider_ReusesSubjectSearchAcrossEpisodes()
+    {
+        var inner = new CountingProvider(
+            "counting",
+            [Candidate("1", "CLANNAD", 2007, MetadataSubjectKind.Series, 0)]);
+        var cached = new CachedMetadataProvider(inner, new MemoryMetadataCache());
+
+        var episode1 = new MetadataSearchRequest(
+            ["CLANNAD"], 2007, MediaKind.SeriesEpisode, 1, 1, "ja", 10);
+        var episode18 = episode1 with { EpisodeNumber = 18 };
+
+        _ = await cached.SearchAsync(
+            episode1,
+            TestContext.Current.CancellationToken);
+        _ = await cached.SearchAsync(
+            episode18,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, inner.SearchCount);
+    }
+
+    [Fact]
     public async Task EnrichAsync_FetchesResolvedSubjectAndEpisode()
     {
         var provider = new EnrichmentProvider(
