@@ -49,7 +49,7 @@ public sealed class ProviderContractTests
                 1,
                 1,
                 "zh-CN",
-                10));
+                10), TestContext.Current.CancellationToken);
 
         var candidate = Assert.Single(result);
         Assert.Equal("253", candidate.Id.Value);
@@ -98,7 +98,7 @@ public sealed class ProviderContractTests
                 1,
                 1,
                 "en",
-                10));
+                10), TestContext.Current.CancellationToken);
 
         var candidate = Assert.Single(result);
         Assert.Equal("42509", candidate.Id.Value);
@@ -135,7 +135,8 @@ public sealed class ProviderContractTests
             new TmdbMetadataProviderOptions("secret-token", "zh-CN"));
 
         var subject = await provider.GetSubjectAsync(
-            new MetadataProviderItemId("tmdb", "129", MetadataSubjectKind.Movie));
+            new MetadataProviderItemId("tmdb", "129", MetadataSubjectKind.Movie),
+            TestContext.Current.CancellationToken);
 
         Assert.NotNull(subject);
         Assert.Equal("千与千寻", subject.Titles.Primary);
