@@ -135,6 +135,19 @@ public sealed class RealWorld035RegressionTests
     }
 
     [Fact]
+    public void Recognize_DoesNotReuseFranchiseFolderYearForLaterSeason()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/CLANNAD (2007)/Season 2/CLANNAD S02E01.mkv"));
+
+        Assert.Equal(2, result.SeasonNumber);
+        Assert.Null(result.Year);
+        Assert.DoesNotContain(result.Evidence, static item =>
+            item.Code == "year.parent-directory");
+    }
+
+    [Fact]
     public void Recognize_ParentYearDoesNotTreatFutureTitleNumberAsReleaseYear()
     {
         var result = _engine.Recognize(
