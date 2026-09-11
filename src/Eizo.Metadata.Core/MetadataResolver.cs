@@ -420,9 +420,10 @@ internal static class MetadataMatchScorer
             request,
             candidate,
             out var requestedInstallment,
-            out var candidateInstallment);
+            out var candidateInstallment,
+            out var requestedInstallmentSource);
         var strongInstallmentEvidence =
-            titleInstallment is not null ||
+            requestedInstallmentSource == "title" ||
             request.SeasonNumber is > 1;
 
         var titleScore = BestTitleScore(request.Titles, candidate.Titles);
@@ -451,6 +452,7 @@ internal static class MetadataMatchScorer
         if (requestedInstallment is not null || candidateInstallment is not null)
         {
             evidence.Add($"installment=request:{requestedInstallment?.ToString(CultureInfo.InvariantCulture) ?? "-"},candidate:{candidateInstallment?.ToString(CultureInfo.InvariantCulture) ?? "-"}");
+            evidence.Add($"installment-source={requestedInstallmentSource}");
         }
 
         var rankScore = 1.0 - Math.Min(Math.Max(candidate.ProviderRank, 0), 20) / 25.0;
@@ -710,12 +712,40 @@ internal static class MetadataMatchScorer
         MetadataSearchRequest request,
         MetadataSearchCandidate candidate,
         out int? requestedInstallment,
-        out int? candidateInstallment)
+        out int? candidateInstallment,
+        out string requestedInstallmentSource)
     {
-        requestedInstallment = FindInstallment(request.Titles);
-        if (requestedInstallment is null && request.SeasonNumber is > 0)
+        var titleInstallment = FindInstallment(request.Titles);
+
+        // A file-specific Recognition season is the strongest structural fact.
+        // Season 1 is frequently only a default bucket, so an explicit sequel
+        // marker in the canonical title may still override that generic value.
+        // Season 2+ from SxxEyy / nearest Season directory always wins over
+        // aliases and parent-directory collection labels.
+        if (request.SeasonNumber is > 1)
         {
             requestedInstallment = request.SeasonNumber;
+            requestedInstallmentSource = "recognition-season";
+        }
+        else if (titleInstallment is not null &&
+                 (request.SeasonNumber is null ||
+                  request.SeasonNumber <= 1) &&
+                 titleInstallment != request.SeasonNumber)
+        {
+            requestedInstallment = titleInstallment;
+            requestedInstallmentSource = "title";
+        }
+        else if (request.SeasonNumber is > 0)
+        {
+            requestedInstallment = request.SeasonNumber;
+            requestedInstallmentSource = "recognition-season";
+        }
+        else
+        {
+            requestedInstallment = titleInstallment;
+            requestedInstallmentSource = titleInstallment is null
+                ? "none"
+                : "title";
         }
 
         candidateInstallment = FindInstallment(candidate.Titles.EnumerateAll());
@@ -738,7 +768,8 @@ internal static class MetadataMatchScorer
         foreach (var title in titles)
         {
             var value = title.Normalize(NormalizationForm.FormKC).Trim();
-            if (value.Length == 0)
+            if (value.Length == 0 ||
+                MetadataSearchTitleNormalizer.IsSeasonCoverageRange(value))
             {
                 continue;
             }
