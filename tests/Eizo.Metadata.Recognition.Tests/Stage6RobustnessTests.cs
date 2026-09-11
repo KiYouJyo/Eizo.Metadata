@@ -1,4 +1,5 @@
 using System.Text;
+using Eizo.Metadata.Recognition.Internal;
 
 namespace Eizo.Metadata.Recognition.Tests;
 
@@ -75,12 +76,12 @@ public sealed class Stage6RobustnessTests
     [Fact]
     public void FinaleDetection_LongWhitespace_IsLinearAndDoesNotThrow()
     {
-        var path =
-            "Library/Finale Test/Finale Test 9" +
+        var path = PathPreprocessor.Preprocess(
+            "Finale Test 9" +
             new string(' ', 20_000) +
-            "END.mkv";
+            "END.mkv");
 
-        var result = _engine.Recognize(new RecognitionRequest(path));
+        var result = DomainClassifier.Classify(path);
 
         Assert.True(result.IsFinalEpisode);
     }
