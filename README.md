@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.0 scope
+## Runtime 0.2.3 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,12 +99,14 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.0 — provider foundation.**
+**Metadata Runtime 0.2.3 — field-report search normalization.**
 
-Recognition is mature enough to remain stable while metadata enrichment moves forward.
-The next integration step is for Eizo to instantiate cached providers, feed
-`RecognitionResult` into `MetadataResolver`, persist selected provider IDs in its
-catalog, and asynchronously enrich UI records without blocking library scan/playback.
+Recognition remains stable while Metadata 0.2.3 targets the dominant failure mode from
+Eizo's large real-library report: recognized titles that fail provider search because
+library ordinals, season prefixes, trailing years, release separators or Unicode
+punctuation leak into the query. Normalization now happens at the resolver boundary so
+both FromRecognition callers and hosts that construct MetadataSearchRequest directly
+receive the same conservative search variants without lowering resolution thresholds.
 
 ## License
 
