@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Eizo.Metadata.Recognition;
 
 namespace Eizo.Metadata.Core;
@@ -82,30 +84,105 @@ public sealed record MetadataSearchRequest(
         ArgumentNullException.ThrowIfNull(recognition);
 
         var titles = new List<string>();
-        if (!string.IsNullOrWhiteSpace(recognition.Title))
+
+        static void AddTitleAndSearchVariant(List<string> destination, string? value)
         {
-            titles.Add(recognition.Title);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var title = value.Trim();
+            if (!destination.Contains(title, StringComparer.OrdinalIgnoreCase))
+            {
+                destination.Add(title);
+            }
+
+            var normalized = MetadataSearchTitleNormalizer.Normalize(title);
+            if (!string.IsNullOrWhiteSpace(normalized) &&
+                !destination.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                destination.Add(normalized);
+            }
         }
+
+        AddTitleAndSearchVariant(titles, recognition.Title);
 
         foreach (var candidate in recognition.TitleCandidates
                      .OrderByDescending(static item => item.IsPrimary)
                      .ThenByDescending(static item => item.Confidence))
         {
-            if (!string.IsNullOrWhiteSpace(candidate.Title) &&
-                !titles.Contains(candidate.Title, StringComparer.OrdinalIgnoreCase))
-            {
-                titles.Add(candidate.Title);
-            }
+            AddTitleAndSearchVariant(titles, candidate.Title);
         }
 
         return new MetadataSearchRequest(
-            titles.Take(4).ToArray(),
+            titles.Take(6).ToArray(),
             recognition.Year,
             recognition.MediaKind,
             recognition.SeasonNumber,
             recognition.EpisodeNumber ?? recognition.SpecialNumber,
             preferredLanguage,
             Math.Clamp(limit, 1, 25));
+    }
+}
+
+internal static class MetadataSearchTitleNormalizer
+{
+    private const RegexOptions Options =
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+
+    private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(50);
+
+    private static readonly Regex LeadingLibraryOrdinalRegex = new(
+        @"^\s*\d{1,2}\s*[._-]?\s*(?:\[(?:19|20)\d{2}\s*[-~–—−]\s*(?:19|20)\d{2}\]\s*)?",
+        Options,
+        Timeout);
+
+    private static readonly Regex LeadingSeasonTokenRegex = new(
+        @"^\s*S(?:EASON)?\s*0?\d{1,2}\s+(?=\p{L}|\p{N}|[\u3040-\u30ff\u3400-\u9fff])",
+        Options,
+        Timeout);
+
+    private static readonly Regex TrailingYearRegex = new(
+        @"(?:[. _-]+|\s*\()(?<year>(?:19|20)\d{2})\)?\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex ProviderIdSuffixRegex = new(
+        @"\s*\{\s*(?:tmdb|tmdbid|tvdb|imdb)\s*[-_:]?\s*[^}]+\}\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex MultiSeparatorRegex = new(
+        @"[._]+",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    private static readonly Regex MultiWhitespaceRegex = new(
+        @"\s+",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    internal static string Normalize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value
+            .Normalize(NormalizationForm.FormKC)
+            .Replace('꞉', ':')
+            .Trim();
+
+        normalized = ProviderIdSuffixRegex.Replace(normalized, string.Empty);
+        normalized = LeadingLibraryOrdinalRegex.Replace(normalized, string.Empty);
+        normalized = LeadingSeasonTokenRegex.Replace(normalized, string.Empty);
+        normalized = TrailingYearRegex.Replace(normalized, string.Empty);
+        normalized = MultiSeparatorRegex.Replace(normalized, " ");
+        normalized = MultiWhitespaceRegex.Replace(normalized, " ").Trim();
+
+        return normalized.Trim(' ', '-', '–', '—', '−', '_', '.');
     }
 }
 
