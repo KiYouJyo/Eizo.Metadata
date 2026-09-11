@@ -236,6 +236,12 @@ internal static class ConfidenceScorer
             return;
         }
 
+        if (mediaKind == MediaKind.Special &&
+            IsCompatibleSpecialEpisode(episode, domain))
+        {
+            return;
+        }
+
         var onlyBareEpisode = episode.Evidence.Count > 0 &&
                               episode.Evidence.All(static item =>
                                   item.Code == "episode.bare-filename" ||
@@ -254,6 +260,23 @@ internal static class ConfidenceScorer
             "confidence.domain-episode-conflict",
             mediaKind.ToString(),
             -0.12));
+    }
+
+    private static bool IsCompatibleSpecialEpisode(
+        EpisodeExtractionResult episode,
+        DomainClassificationResult domain)
+    {
+        // S00E.. is the de-facto Specials convention used by Plex/Jellyfin-style
+        // libraries. It is not a contradiction with a Specials/OVA directory.
+        if (episode.SeasonNumber == 0)
+        {
+            return true;
+        }
+
+        // "OVA 02" can be observed by both the domain and episode analyzers.
+        // Matching numbers are corroboration, not a structural conflict.
+        return domain.SpecialNumber is { } specialNumber &&
+               episode.EpisodeNumber == specialNumber;
     }
 
     private static void ApplyEvidencePenalties(
