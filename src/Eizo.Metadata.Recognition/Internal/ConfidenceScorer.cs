@@ -182,7 +182,8 @@ internal static class ConfidenceScorer
         // The 0.1.1 field report showed this was the sole source of 850 ambiguous
         // results. Keep the parent as a metadata candidate, but do not turn a strong
         // filename parse into a review item merely because the parent text differs.
-        if (HasStructuredMediaIdentity(mediaKind, episode, domain) &&
+        if ((HasStructuredMediaIdentity(mediaKind, episode, domain) ||
+             string.Equals(first.Source, "filename-release", StringComparison.Ordinal)) &&
             IsAuthoritativeFilenameCandidate(first) &&
             string.Equals(second.Source, "parent-directory", StringComparison.Ordinal) &&
             first.Confidence >= 0.82)
@@ -217,6 +218,7 @@ internal static class ConfidenceScorer
     private static bool IsAuthoritativeFilenameCandidate(TitleCandidate candidate) =>
         candidate.Source is
             "filename" or
+            "filename-release" or
             "filename-episode-title" or
             "filename-extended-sxxexx" or
             "bracket-sequence" or

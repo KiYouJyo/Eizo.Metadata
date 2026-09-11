@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - "codex/metadata-runtime-release"
-      - "codex/metadata-runtime-0.1.3"
       - "codex/metadata-runtime-0.1.4"
+      - "codex/metadata-runtime-0.1.5"
   workflow_dispatch:
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.1.4'
+          $version = '0.1.5'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -118,28 +118,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.1.4-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.1.5-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.1.4-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.1.5-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.1.4
+      - name: Publish Metadata runtime v0.1.5
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.1.4 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.1.4 already exists; leaving the published release immutable.'
+          if gh release view v0.1.5 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.1.5 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.1.4 \
+          gh release create v0.1.5 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.1.4" \
-            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.1.4 is driven by the 6,067-item v0.1.3 field report. It preserves real season-directory conflicts while cleaning counted codec/subtitle tags, YUV/Hi10p/DTS-HD technical groups, JP.BD.Remux and mix tags, and narrowly suppressing explicit OVA or auxiliary SP child-index false conflicts." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.1.4-x64.zip" \
+            --title "Eizo.Metadata v0.1.5" \
+            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.1.5 is driven by the 6,067-item v0.1.4 field report. It keeps real season conflicts reviewable, treats release-shaped filename titles with year plus technical tail as authoritative over localized parent aliases, and closes the last observed 24fps/DDP technical-tail leakage." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.1.5-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"

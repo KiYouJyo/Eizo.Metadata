@@ -18,7 +18,7 @@ internal static class TokenClassifier
 
     private static readonly HashSet<string> AudioCodecs = new(StringComparer.Ordinal)
     {
-        "AAC", "FLAC", "FLA", "AC3", "EAC3", "DTS", "TRUEHD", "DOLBY", "ATMOS",
+        "AAC", "FLAC", "FLA", "AC3", "EAC3", "DDP", "DTS", "TRUEHD", "DOLBY", "ATMOS",
         "OPUS", "MP3", "LPCM",
     };
 
@@ -212,6 +212,13 @@ internal static class TokenClassifier
         if (key.EndsWith("MIX", StringComparison.Ordinal) &&
             int.TryParse(key[..^3], out var mixId) &&
             mixId is >= 1 and <= 9999)
+        {
+            return true;
+        }
+
+        if (key.EndsWith("FPS", StringComparison.Ordinal) &&
+            int.TryParse(key[..^3], out var fps) &&
+            fps is >= 1 and <= 240)
         {
             return true;
         }

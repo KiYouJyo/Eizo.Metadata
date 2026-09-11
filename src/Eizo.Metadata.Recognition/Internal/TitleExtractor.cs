@@ -227,7 +227,24 @@ internal static class TitleExtractor
         }
 
         var confidence = episode.EpisodeNumber is not null ? 0.91 : 0.82;
-        return new TitleCandidate(title, "filename", confidence, SourcePriority: 0);
+        var source = episode.EpisodeNumber is null &&
+                     IsReleaseShapedFilename(path)
+            ? "filename-release"
+            : "filename";
+        return new TitleCandidate(title, source, confidence, SourcePriority: 0);
+    }
+
+    private static bool IsReleaseShapedFilename(NormalizedMediaPath path)
+    {
+        var suffix = TechnicalSuffixAnalyzer.Analyze(path);
+        if (suffix is null)
+        {
+            return false;
+        }
+
+        return path.Tokens.Any(token =>
+            token.Kind == TokenKind.Year &&
+            token.Start >= Math.Max(0, suffix.StartIndex - 8));
     }
 
     private static void AddDirectoryCandidates(
