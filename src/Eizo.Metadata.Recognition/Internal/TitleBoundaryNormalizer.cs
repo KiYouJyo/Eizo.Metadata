@@ -23,6 +23,22 @@ internal static class TitleBoundaryNormalizer
         ArgumentNullException.ThrowIfNull(episode);
         ArgumentNullException.ThrowIfNull(result);
 
+        if (episode.Evidence.Any(static item =>
+                item.Code == "episode.leading-numbered"))
+        {
+            var parent = result.Candidates.FirstOrDefault(static candidate =>
+                candidate.Source == "parent-directory");
+
+            if (parent is not null)
+            {
+                return ReplacePrimary(
+                    result,
+                    parent.Title,
+                    "parent-series-context",
+                    Math.Max(0.88, parent.Confidence));
+            }
+        }
+
         if (episode.Evidence.Any(static item => item.Code == "episode.bracket-after-title") &&
             EpisodeBoundaryNormalizer.TryGetLooseBracketSeriesTitle(path, out var bracketTitle))
         {
