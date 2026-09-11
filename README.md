@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.5 scope
+## Runtime 0.2.6 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,13 +99,15 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.5 — Eizo 0.3.6 ABI compatibility hotfix.**
+**Metadata Runtime 0.2.6 — real-library season reranking.**
 
-Metadata 0.2.5 preserves all 0.2.4 resolver improvements while restoring the legacy
-`BangumiMetadataProviderOptions(string, string, string)` CLR constructor required by
-Eizo 0.3.6 hosts compiled against Metadata <= 0.2.3. The managed assembly ABI remains
-0.1.0.0, and regression tests now explicitly verify the host-facing constructor so future
-provider-option additions cannot silently break external runtime updates.
+Metadata 0.2.6 keeps the 0.2.5 ABI compatibility bridge and targets the remaining
+field-report false negatives after runtime provenance was fixed in Eizo. Equivalent
+installment markers such as PART 2 / 第二期 / 2nd GIG now share one structural identity;
+season-aware requests give structure more weight than a repeated franchise premiere year;
+exact base titles keep a larger margin over OVA/movie/special supersets; and matching
+installments can compare franchise stems after stripping season markers. The existing
+auto-resolution confidence and lead thresholds remain unchanged.
 
 ## License
 
