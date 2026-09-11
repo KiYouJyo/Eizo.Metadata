@@ -160,6 +160,203 @@ public sealed class MetadataResolverTests
         Assert.Equal("2", result.Best!.Candidate.Id.Value);
     }
 
+
+    [Fact]
+    public async Task Resolver_MatchesEquivalentPartAndChinesePeriodMarkers()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("2", "鲁邦三世 第二期", 1977, MetadataSubjectKind.Series, 0),
+                Candidate("1", "鲁邦三世 第一期", 1971, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["鲁邦三世part2"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: null,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.Contains(
+                "installment=request:2,candidate:2",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Resolver_RecognizesEnglishOrdinalInstallmentMarkers()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "2",
+                    "攻壳机动队 S.A.C. 2nd GIG",
+                    2004,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "1",
+                    "攻壳机动队 STAND ALONE COMPLEX",
+                    2002,
+                    MetadataSubjectKind.Series,
+                    1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                [
+                    "S02 攻壳机动队 S.A.C. 2nd GIG",
+                    "攻壳机动队 S.A.C. 2nd GIG",
+                ],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_SeasonIdentityOutweighsRepeatedFranchisePremiereYear()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("1", "轻音少女", 2009, MetadataSubjectKind.Series, 0),
+                Candidate("2", "轻音少女 第二季", 2010, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["轻音少女"],
+                2009,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_ExactBaseSeriesBeatsProperSupersetSpecial()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "base",
+                    "Re：从零开始的异世界生活",
+                    2016,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "ova",
+                    "Re：从零开始的异世界生活 雪之回忆",
+                    2019,
+                    MetadataSubjectKind.Series,
+                    1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Re：从零开始的异世界生活"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("base", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_ExactLegacyTitleBeatsBrotherhoodSuperset()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                CandidateWithAliases(
+                    "2003",
+                    "钢之炼金术师",
+                    2003,
+                    MetadataSubjectKind.Series,
+                    1,
+                    ["Fullmetal Alchemist"]),
+                CandidateWithAliases(
+                    "2009",
+                    "钢之炼金术师 FULLMETAL ALCHEMIST",
+                    2009,
+                    MetadataSubjectKind.Series,
+                    0,
+                    ["Fullmetal Alchemist: Brotherhood"]),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Fullmetal Alchemist", "钢之炼金术师"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: null,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("2003", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_DoesNotAutoResolveDuplicateExactSubjects()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("a", "刀剑神域", 2012, MetadataSubjectKind.Series, 0),
+                Candidate("b", "刀剑神域", 2012, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Sword Art Online", "刀剑神域"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: null,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsResolved);
+        Assert.NotNull(result.Best);
+    }
+
     [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
