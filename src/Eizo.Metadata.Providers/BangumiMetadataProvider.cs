@@ -8,7 +8,8 @@ namespace Eizo.Metadata.Providers;
 public sealed record BangumiMetadataProviderOptions(
     string UserAgent,
     string? AccessToken = null,
-    string BaseAddress = "https://api.bgm.tv/");
+    string BaseAddress = "https://api.bgm.tv/",
+    int SearchAliasEnrichmentLimit = 5);
 
 public sealed class BangumiMetadataProvider : IMetadataProvider
 {
@@ -43,6 +44,8 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        request = request.ForProviderSearch();
+
         var titles = request.Titles
             .Where(static title => !string.IsNullOrWhiteSpace(title))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -50,7 +53,6 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
             .ToArray();
 
         var candidates = new Dictionary<string, MetadataSearchCandidate>(StringComparer.Ordinal);
-        var rank = 0;
 
         foreach (var title in titles)
         {
@@ -84,6 +86,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
                 continue;
             }
 
+            var queryRank = 0;
             foreach (var item in data.EnumerateArray())
             {
                 var id = item.GetInt32("id");
@@ -93,28 +96,68 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
                 }
 
                 var key = id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                if (candidates.ContainsKey(key))
+                var mapped = MapCandidate(item, key, queryRank++);
+
+                if (candidates.TryGetValue(key, out var existing))
+                {
+                    candidates[key] = existing with
+                    {
+                        Titles = MergeTitles(existing.Titles, mapped.Titles),
+                        Year = existing.Year ?? mapped.Year,
+                        ProviderRank = Math.Min(existing.ProviderRank, mapped.ProviderRank),
+                        Popularity = Math.Max(existing.Popularity ?? 0.0, mapped.Popularity ?? 0.0),
+                    };
+                }
+                else
+                {
+                    candidates[key] = mapped;
+                }
+            }
+        }
+
+        // Query variants are intentionally unioned before truncation. The old
+        // early-exit behavior could fill the limit with results from a noisy raw
+        // filename and never execute the normalized title query.
+        var result = candidates.Values
+            .OrderBy(static item => item.ProviderRank)
+            .ThenByDescending(static item => item.Popularity ?? 0.0)
+            .ThenBy(static item => item.Id.Value, StringComparer.Ordinal)
+            .Take(request.Limit)
+            .ToArray();
+
+        var enrichmentLimit = Math.Clamp(_options.SearchAliasEnrichmentLimit, 0, 10);
+        for (var index = 0; index < Math.Min(enrichmentLimit, result.Length); index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var subject = await GetSubjectAsync(result[index].Id, cancellationToken)
+                    .ConfigureAwait(false);
+                if (subject is null)
                 {
                     continue;
                 }
 
-                candidates[key] = MapCandidate(item, key, rank++);
-                if (candidates.Count >= request.Limit)
+                result[index] = result[index] with
                 {
-                    break;
-                }
+                    Id = subject.Id,
+                    Titles = MergeTitles(result[index].Titles, subject.Titles),
+                    Year = result[index].Year ?? subject.ReleaseDate?.Year,
+                };
             }
-
-            if (candidates.Count >= request.Limit)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                break;
+                throw;
+            }
+            catch
+            {
+                // Alias enrichment is optional. Search must remain usable if one
+                // detail request is rate-limited or a legacy subject is malformed.
             }
         }
 
-        return candidates.Values
-            .OrderBy(static item => item.ProviderRank)
-            .Take(request.Limit)
-            .ToArray();
+        return result;
     }
 
     public async Task<MetadataSubject?> GetSubjectAsync(
@@ -314,8 +357,139 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
             aliases.Add(original);
         }
 
+        AddInfoboxAliases(item, aliases, localized);
+
+        return new MetadataTitles(
+            primary,
+            original,
+            localized,
+            aliases
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+    }
+
+    private static void AddInfoboxAliases(
+        JsonElement item,
+        List<string> aliases,
+        Dictionary<string, string> localized)
+    {
+        if (!item.TryGetProperty("infobox", out var infoBox) ||
+            infoBox.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (var entry in infoBox.EnumerateArray())
+        {
+            var key = entry.GetString("key")?.Trim() ?? string.Empty;
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            var values = ReadInfoboxValues(entry).ToArray();
+            if (values.Length == 0)
+            {
+                continue;
+            }
+
+            if (key is "简体中文名" or "簡體中文名")
+            {
+                localized.TryAdd("zh-CN", values[0]);
+                continue;
+            }
+
+            if (key.Contains("别名", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("別名", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("ALIAS", StringComparison.OrdinalIgnoreCase) ||
+                key is "英文名" or "英语名" or "英語名" or "罗马字" or "羅馬字")
+            {
+                aliases.AddRange(values);
+            }
+        }
+    }
+
+    private static IEnumerable<string> ReadInfoboxValues(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("value", out var value))
+        {
+            yield break;
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                yield return text.Trim();
+            }
+
+            yield break;
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var text = item.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    yield return text.Trim();
+                }
+
+                continue;
+            }
+
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var textValue = item.GetString("v") ??
+                            item.GetString("value") ??
+                            item.GetString("name");
+            if (!string.IsNullOrWhiteSpace(textValue))
+            {
+                yield return textValue.Trim();
+            }
+        }
+    }
+
+    private static MetadataTitles MergeTitles(MetadataTitles left, MetadataTitles right)
+    {
+        var localized = new Dictionary<string, string>(left.Localized, StringComparer.OrdinalIgnoreCase);
+        foreach (var (language, title) in right.Localized)
+        {
+            localized.TryAdd(language, title);
+        }
+
+        var primary = !string.IsNullOrWhiteSpace(left.Primary)
+            ? left.Primary
+            : right.Primary;
+        var original = !string.IsNullOrWhiteSpace(left.Original)
+            ? left.Original
+            : right.Original;
+
+        var aliases = left.EnumerateAll()
+            .Concat(right.EnumerateAll())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Select(static value => value.Trim())
+            .Where(value =>
+                !string.Equals(value, primary, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(value, original, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         return new MetadataTitles(primary, original, localized, aliases);
     }
+
 
     private static MetadataSubjectKind MapKind(JsonElement item)
     {
