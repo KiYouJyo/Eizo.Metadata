@@ -45,6 +45,11 @@ public sealed class MetadataResolver
                 ProviderErrors: Array.Empty<MetadataProviderError>());
         }
 
+        // Normalize at the resolver boundary so every host benefits, including
+        // callers that construct MetadataSearchRequest directly instead of using
+        // FromRecognition. Preserve originals and add conservative search variants.
+        request = MetadataSearchRequestNormalizer.Normalize(request);
+
         var tasks = _providers.Select(provider =>
             SearchProviderAsync(provider, request, cancellationToken)).ToArray();
 
