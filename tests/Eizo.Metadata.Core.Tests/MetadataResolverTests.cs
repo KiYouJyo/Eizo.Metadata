@@ -411,6 +411,161 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task Resolver_TreatsUnlabelledBaseSubjectAsImplicitSeasonOne()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("base", "Dragon Zakura", 2005, MetadataSubjectKind.Series, 0),
+                Candidate("other", "Dragon Zakura Special", 2006, MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Dragon Zakura"],
+                2005,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("base", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_PenalizesDerivativeOadForRegularSeriesRequest()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "base",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅",
+                    2013,
+                    MetadataSubjectKind.Series,
+                    2),
+                Candidate(
+                    "oad",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅 OAD",
+                    2014,
+                    MetadataSubjectKind.Series,
+                    0),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["魔法少女☆伊莉雅"],
+                2013,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("base", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_DoesNotPenalizeDerivativeWhenRequestExplicitlyNamesIt()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "oad",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅 OAD",
+                    2014,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "base",
+                    "Fate/kaleid liner 魔法少女☆伊莉雅",
+                    2013,
+                    MetadataSubjectKind.Series,
+                    1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["魔法少女☆伊莉雅 OAD"],
+                2014,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("oad", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_KnownYearSeparatesExactCandidateFromUndatedDuplicate()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("dated", "药屋少女的呢喃", 2023, MetadataSubjectKind.Series, 0),
+                CandidateWithoutYear("undated", "药屋少女的呢喃", MetadataSubjectKind.Series, 1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["药屋少女的呢喃"],
+                2023,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("dated", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_RegularSeriesBeatsLiveEventWithSameFranchiseAndYear()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate("tv", "LoveLive! Sunshine!!", 2016, MetadataSubjectKind.Series, 4),
+                Candidate(
+                    "live",
+                    "LoveLive! Sunshine!! Aqours First Live! ～Step! ZERO to ONE～",
+                    2017,
+                    MetadataSubjectKind.Series,
+                    0),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["LoveLive! Sunshine!!"],
+                2016,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 1,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("tv", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
         var resolver = new MetadataResolver(
@@ -516,6 +671,21 @@ public sealed class MetadataResolverTests
             year,
             rank);
 
+
+    private static MetadataSearchCandidate CandidateWithoutYear(
+        string id,
+        string title,
+        MetadataSubjectKind kind,
+        int rank) =>
+        new(
+            new MetadataProviderItemId("fake", id, kind),
+            new MetadataTitles(
+                title,
+                title,
+                new Dictionary<string, string>(),
+                Array.Empty<string>()),
+            Year: null,
+            rank);
 
     private static MetadataSearchCandidate CandidateWithAliases(
         string id,
