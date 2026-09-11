@@ -21,7 +21,14 @@ internal static class ConfidenceScorer
         var score = BaseScore(mediaKind, episode, title, domain, evidence);
         var isAmbiguous = false;
 
-        ApplyTitleConsensus(title, ref score, ref isAmbiguous, evidence);
+        ApplyTitleConsensus(
+            mediaKind,
+            episode,
+            domain,
+            title,
+            ref score,
+            ref isAmbiguous,
+            evidence);
         ApplyStructuralConflicts(mediaKind, episode, domain, ref score, ref isAmbiguous, evidence);
         ApplyEvidencePenalties(episode, ref score, ref isAmbiguous, evidence);
 
@@ -144,6 +151,9 @@ internal static class ConfidenceScorer
     }
 
     private static void ApplyTitleConsensus(
+        MediaKind mediaKind,
+        EpisodeExtractionResult episode,
+        DomainClassificationResult domain,
         TitleExtractionResult title,
         ref double score,
         ref bool isAmbiguous,
@@ -172,7 +182,8 @@ internal static class ConfidenceScorer
         // The 0.1.1 field report showed this was the sole source of 850 ambiguous
         // results. Keep the parent as a metadata candidate, but do not turn a strong
         // filename parse into a review item merely because the parent text differs.
-        if (IsAuthoritativeFilenameCandidate(first) &&
+        if (HasStructuredMediaIdentity(mediaKind, episode, domain) &&
+            IsAuthoritativeFilenameCandidate(first) &&
             string.Equals(second.Source, "parent-directory", StringComparison.Ordinal) &&
             first.Confidence >= 0.82)
         {
@@ -194,6 +205,14 @@ internal static class ConfidenceScorer
                 -0.07));
         }
     }
+
+    private static bool HasStructuredMediaIdentity(
+        MediaKind mediaKind,
+        EpisodeExtractionResult episode,
+        DomainClassificationResult domain) =>
+        mediaKind != MediaKind.Unknown ||
+        episode.EpisodeNumber is not null ||
+        domain.MediaKind != MediaKind.Unknown;
 
     private static bool IsAuthoritativeFilenameCandidate(TitleCandidate candidate) =>
         candidate.Source is
