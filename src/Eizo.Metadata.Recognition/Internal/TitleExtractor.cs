@@ -45,7 +45,7 @@ internal static class TitleExtractor
             Options,
             RegexTimeout),
         new(
-            @"(?:^劇場版|^映画[\s　]+|[\s._-](?:劇場版|映画)(?=\s*(?:$|\[|\(|【)))",
+            @"(?:^(?:劇場版|剧场版)|^(?:映画|电影|電影)[\s　]+|[\s._-](?:劇場版|剧场版|映画|电影|電影)(?=\s*(?:$|\[|\(|【)))",
             Options,
             RegexTimeout),
         new(
@@ -57,13 +57,13 @@ internal static class TitleExtractor
             Options,
             RegexTimeout),
         new(
-            @"(?:前編|前篇|後編|後篇)(?![\p{L}\p{N}])(?:\s*[「『].*?[」』])?",
+            @"(?:前編|前篇|前编|後編|後篇|后编|后篇)(?![\p{L}\p{N}])(?:\s*[「『].*?[」』])?",
             Options,
             RegexTimeout),
     };
 
     private static readonly Regex DomainOnlyNameRegex = new(
-        @"^\s*(?:(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?|スペシャル|特別編|総集編|劇場版|MOVIE)\s*$",
+        @"^\s*(?:(?:OVA|OAD|ONA|SP|SPECIALS?|NCOP|NCED)(?:\s*[-_. ]?\s*\d{1,3}(?:\.\d+)?)?|スペシャル|特別編|総集編|劇場版|剧场版|映画|电影|電影|MOVIE)\s*$",
         Options,
         RegexTimeout);
 
@@ -97,7 +97,7 @@ internal static class TitleExtractor
         "ANIME", "ANIMES", "TV", "TV SERIES", "SERIES", "DRAMA", "DRAMAS",
         "JDRAMA", "J-DRAMA", "MOVIE", "MOVIES", "VIDEO", "VIDEOS", "MEDIA",
         "DOWNLOAD", "DOWNLOADS", "WEBDAV", "OVA", "OAD", "ONA", "SP",
-        "SPECIAL", "SPECIALS", "NCOP", "NCED", "劇場版",
+        "SPECIAL", "SPECIALS", "NCOP", "NCED", "劇場版", "剧场版",
     };
 
     internal static TitleExtractionResult Extract(
