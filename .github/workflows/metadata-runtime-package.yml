@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - "codex/metadata-runtime-release"
-      - "codex/metadata-runtime-0.1.6"
       - "codex/metadata-runtime-0.2.0"
+      - "codex/metadata-runtime-0.2.1"
   workflow_dispatch:
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.0'
+          $version = '0.2.1'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -118,28 +118,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.0-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.1-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.0-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.1-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.0
+      - name: Publish Metadata runtime v0.2.1
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.0 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.0 already exists; leaving the published release immutable.'
+          if gh release view v0.2.1 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.1 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.0 \
+          gh release create v0.2.1 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.0" \
-            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.2.0 freezes the hardened Recognition 0.1.6 baseline and adds the provider-neutral Metadata Core plus Bangumi and TMDB provider modules. The runtime now supports canonical subjects/episodes, multi-provider resolution with confidence evidence, provider failure isolation, and memory/file TTL caching while keeping Recognition fully offline." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.0-x64.zip" \
+            --title "Eizo.Metadata v0.2.1" \
+            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.2.1 keeps the Metadata 0.2.0 provider foundation and changes provider search caching to work-level keys. Episodes of the same recognized title now reuse one subject search response, while subject details and episode lists retain their own TTL caches. This prevents large libraries from multiplying identical Bangumi/TMDB search traffic." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.1-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
