@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.7 scope
+## Runtime 0.2.8 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,15 +99,15 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.7 — continuous-series and provider-recall pass.**
+**Metadata Runtime 0.2.8 — precision crossline pass.**
 
-Metadata 0.2.7 targets the largest remaining real-library clusters without lowering
-confidence thresholds. Recognition can recover a conservative release year from named
-parent folders when episode filenames omit it; Bangumi searches retrieve a wider candidate
-window before local reranking; and unresolved exact-title season requests can probe the
-subject episode count so long-running shows such as Naruto are not penalized when a local
-Season folder is merely an arc/partition rather than a separate provider subject. Short
-series remain unresolved under the same condition, preventing CLANNAD-like sequel mistakes.
+Metadata 0.2.8 is a narrow real-library pass aimed at crossing 90% without lowering
+AutoResolveThreshold=0.82 or MinimumLead=0.06. Season 1 is treated as the default library
+bucket for weighting purposes so exact release-year evidence stays strong; AFTER STORY is
+recognized as a second-installment marker for sequel matching; and OAD/OVA/special/movie
+subjects receive a mismatch penalty when Recognition requested a regular series episode.
+This targets the remaining Apothecary Diaries, Prisma Illya and CLANNAD clusters while
+preserving the 0.2.7 continuous-series behavior.
 
 ## License
 
