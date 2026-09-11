@@ -1,3 +1,5 @@
+using Eizo.Metadata.Recognition.Internal;
+
 namespace Eizo.Metadata.Recognition.Tests;
 
 public sealed class RealWorld014ReportRegressionTests
