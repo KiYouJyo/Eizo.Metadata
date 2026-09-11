@@ -5,8 +5,8 @@ on:
     branches:
       - "codex/metadata-runtime-release"
       - "codex/metadata-runtime-0.2.1"
-      - "codex/metadata-runtime-0.2.3"
-      - "codex/metadata-runtime-0.2.3"
+      - "codex/metadata-runtime-0.2.4"
+      - "codex/metadata-runtime-0.2.4"
   workflow_dispatch:
 
 permissions:
@@ -42,7 +42,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.3'
+          $version = '0.2.4'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -119,28 +119,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.3-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.4-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.3-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.4-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.3
+      - name: Publish Metadata runtime v0.2.4
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.3 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.3 already exists; leaving the published release immutable.'
+          if gh release view v0.2.4 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.4 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.3 \
+          gh release create v0.2.4 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.3" \
-            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.2.3 improves real-library metadata matching by preserving recognized titles while adding conservative provider-search variants at the resolver boundary. This makes the fix effective for Eizo and other hosts that construct MetadataSearchRequest directly, without weakening auto-resolution thresholds." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.3-x64.zip" \
+            --title "Eizo.Metadata v0.2.4" \
+            --notes "Unified Metadata runtime release for Eizo 0.3.6. Recognition and Metadata Providers share this update channel. v0.2.4 hardens real-library metadata resolution with weak-title filtering, multi-query Bangumi union, infobox alias enrichment, title-year recovery, and season/installment-aware reranking. Auto-resolution safety thresholds remain unchanged." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.4-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
