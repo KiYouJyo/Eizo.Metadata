@@ -9,7 +9,20 @@ public sealed record BangumiMetadataProviderOptions(
     string UserAgent,
     string? AccessToken = null,
     string BaseAddress = "https://api.bgm.tv/",
-    int SearchAliasEnrichmentLimit = 5);
+    int SearchAliasEnrichmentLimit = 5)
+{
+    // Binary-compatibility bridge for Eizo 0.3.6 and any host compiled against
+    // Metadata <= 0.2.3. Optional parameters are substituted by the C# compiler;
+    // adding a fourth primary-constructor parameter in 0.2.4 removed the CLR
+    // .ctor(string, string, string) method that those hosts call at runtime.
+    public BangumiMetadataProviderOptions(
+        string UserAgent,
+        string? AccessToken,
+        string BaseAddress)
+        : this(UserAgent, AccessToken, BaseAddress, SearchAliasEnrichmentLimit: 5)
+    {
+    }
+}
 
 public sealed class BangumiMetadataProvider : IMetadataProvider
 {
