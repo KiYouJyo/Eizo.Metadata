@@ -69,9 +69,15 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
 
         foreach (var title in titles)
         {
+            // Fetch a wider candidate window than the resolver ultimately
+            // returns. Bangumi's provider ranking often places the canonical TV
+            // subject behind live events, movies or specials for franchise-heavy
+            // queries such as LoveLive!, while our local scorer can recover the
+            // right subject once it is present in the candidate set.
+            var providerLimit = Math.Max(25, Math.Clamp(request.Limit, 1, 25));
             using var message = CreateRequest(
                 HttpMethod.Post,
-                $"v0/search/subjects?limit={Math.Clamp(request.Limit, 1, 25)}&offset=0");
+                $"v0/search/subjects?limit={providerLimit}&offset=0");
             message.Content = JsonContent.Create(new
             {
                 keyword = title,
@@ -135,7 +141,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
             .OrderBy(static item => item.ProviderRank)
             .ThenByDescending(static item => item.Popularity ?? 0.0)
             .ThenBy(static item => item.Id.Value, StringComparer.Ordinal)
-            .Take(request.Limit)
+            .Take(Math.Max(request.Limit, 25))
             .ToArray();
 
         var enrichmentLimit = Math.Clamp(_options.SearchAliasEnrichmentLimit, 0, 10);
