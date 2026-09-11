@@ -21,7 +21,7 @@ internal static class DomainClassifier
         RegexTimeout);
 
     private static readonly Regex JapaneseMovieRegex = new(
-        @"(?:^劇場版|^映画[\s　]+|[\s._-](?:劇場版|映画)(?=\s*(?:$|\[|\(|【)))",
+        @"(?:^(?:劇場版|剧场版)|^(?:映画|电影|電影)[\s　]+|[\s._-](?:劇場版|剧场版|映画|电影|電影)(?=\s*(?:$|\[|\(|【)))",
         Options,
         RegexTimeout);
 
@@ -36,12 +36,22 @@ internal static class DomainClassifier
         RegexTimeout);
 
     private static readonly Regex FirstPartRegex = new(
-        @"(?:前編|前篇)(?![\p{L}\p{N}])",
+        @"(?:前編|前篇|前编)(?![\p{L}\p{N}])",
         Options,
         RegexTimeout);
 
     private static readonly Regex SecondPartRegex = new(
-        @"(?:後編|後篇)(?![\p{L}\p{N}])",
+        @"(?:後編|後篇|后编|后篇)(?![\p{L}\p{N}])",
+        Options,
+        RegexTimeout);
+
+    private static readonly Regex MovieDirectoryHintRegex = new(
+        @"(?:劇場版|剧场版|映画|电影|電影|真人版|LIVE[\s._-]*ACTION)",
+        Options,
+        RegexTimeout);
+
+    private static readonly Regex SeriesDirectoryHintRegex = new(
+        @"(?:SEASON\s*0?\d{1,2}|(?<![A-Za-z0-9])S\s*0?\d{1,2}(?![A-Za-z0-9])|(?<![A-Za-z])PART\s*0?\d{1,2}(?!\d)|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ)|(?:^|[\s._-])TV(?:版|\s*SERIES)?(?:$|[\s._-])|^番(?:劇|剧)$)",
         Options,
         RegexTimeout);
 
@@ -129,6 +139,15 @@ internal static class DomainClassifier
             ref specialKind,
             ref confidence,
             evidence);
+
+        if (mediaKind == MediaKind.Unknown)
+        {
+            ApplyMovieDirectoryHint(
+                path,
+                ref mediaKind,
+                ref confidence,
+                evidence);
+        }
 
         var finaleMatch = FinaleRegex.Match(path.NormalizedStem);
         if (finaleMatch.Success)
@@ -220,6 +239,51 @@ internal static class DomainClassifier
             }
 
             break;
+        }
+    }
+
+    private static void ApplyMovieDirectoryHint(
+        NormalizedMediaPath path,
+        ref MediaKind mediaKind,
+        ref double confidence,
+        ICollection<RecognitionEvidence> evidence)
+    {
+        if (path.NormalizedDirectorySegments.Count == 0)
+        {
+            return;
+        }
+
+        var start = Math.Max(0, path.NormalizedDirectorySegments.Count - 2);
+        var nearby = path.NormalizedDirectorySegments
+            .Skip(start)
+            .Select(static directory => directory.Trim())
+            .Where(static directory => directory.Length > 0)
+            .ToArray();
+
+        // A collection directory such as "...1-6季+OVA+剧场版..." must not
+        // turn ordinary numbered TV episodes into movies. Nearby explicit
+        // season/part/TV context wins over a movie word in an ancestor.
+        if (nearby.Any(static directory =>
+                SeriesDirectoryHintRegex.IsMatch(directory)))
+        {
+            return;
+        }
+
+        for (var i = nearby.Length - 1; i >= 0; i--)
+        {
+            var match = MovieDirectoryHintRegex.Match(nearby[i]);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            mediaKind = MediaKind.Movie;
+            confidence = Math.Max(confidence, 0.88);
+            evidence.Add(new RecognitionEvidence(
+                "movie.directory-hint",
+                nearby[i],
+                0.88));
+            return;
         }
     }
 
