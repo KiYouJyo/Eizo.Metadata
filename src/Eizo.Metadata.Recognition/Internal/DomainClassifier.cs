@@ -30,11 +30,6 @@ internal static class DomainClassifier
         Options,
         RegexTimeout);
 
-    private static readonly Regex FinaleRegex = new(
-        @"(?:最終話|最終回)(?![\p{L}\p{N}])|(?<=\d)\s+END(?=\s*(?:$|\[|\(|【))",
-        Options,
-        RegexTimeout);
-
     private static readonly Regex FirstPartRegex = new(
         @"(?:前編|前篇|前编)(?![\p{L}\p{N}])",
         Options,
@@ -150,8 +145,8 @@ internal static class DomainClassifier
                 evidence);
         }
 
-        var finaleMatch = FinaleRegex.Match(path.NormalizedStem);
-        if (finaleMatch.Success)
+        var finaleMarker = MatchFinale(path.NormalizedStem);
+        if (finaleMarker is not null)
         {
             isFinal = true;
             if (mediaKind == MediaKind.Unknown)
@@ -162,7 +157,7 @@ internal static class DomainClassifier
             confidence = Math.Max(confidence, 0.93);
             evidence.Add(new RecognitionEvidence(
                 "episode.final",
-                finaleMatch.Value,
+                finaleMarker,
                 0.93));
         }
 
@@ -286,6 +281,67 @@ internal static class DomainClassifier
                 0.88));
             return;
         }
+    }
+
+    private static string? MatchFinale(string value)
+    {
+        foreach (var marker in new[] { "最終話", "最終回" })
+        {
+            var start = 0;
+            while (start < value.Length)
+            {
+                var index = value.IndexOf(marker, start, StringComparison.Ordinal);
+                if (index < 0)
+                {
+                    break;
+                }
+
+                var next = index + marker.Length;
+                if (next >= value.Length || !char.IsLetterOrDigit(value[next]))
+                {
+                    return marker;
+                }
+
+                start = next;
+            }
+        }
+
+        // Equivalent to the former /(?<=\d)\s+END(?=\s*(?:$|\[|\(|【))/i
+        // but strictly linear, so adversarial whitespace cannot trigger a regex timeout.
+        for (var i = 1; i < value.Length; i++)
+        {
+            if (!char.IsWhiteSpace(value[i]) || !char.IsDigit(value[i - 1]))
+            {
+                continue;
+            }
+
+            var whitespaceStart = i;
+            while (i < value.Length && char.IsWhiteSpace(value[i]))
+            {
+                i++;
+            }
+
+            if (i + 3 > value.Length ||
+                !value.AsSpan(i, 3).Equals("END".AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var afterEnd = i + 3;
+            var boundary = afterEnd;
+            while (boundary < value.Length && char.IsWhiteSpace(value[boundary]))
+            {
+                boundary++;
+            }
+
+            if (boundary == value.Length ||
+                value[boundary] is '[' or '(' or '【')
+            {
+                return value[whitespaceStart..afterEnd].Trim();
+            }
+        }
+
+        return null;
     }
 
     private static SpecialKind ParseSpecialKind(string value) =>
