@@ -25,6 +25,16 @@ internal static class EpisodeBoundaryNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex LeadingNumberedEpisodeRegex = new(
+        @"^\s*(?<episode>\d{1,4})[._\-–—− ]+(?<title>.+?)\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex SeriesDirectoryContextRegex = new(
+        @"(?:SEASON\s*0?\d{1,2}|(?<![A-Za-z0-9])S\s*0?\d{1,2}(?![A-Za-z0-9])|(?<![A-Za-z])PART\s*0?\d{1,2}(?!\d)|COUR\s*0?\d{1,2}|第\s*0?\d{1,2}\s*(?:季|期|クール|シーズン|シリーズ)|(?:^|[\s._-])TV(?:版|\s*SERIES)?(?:$|[\s._-])|^番(?:劇|剧)$)",
+        Options,
+        Timeout);
+
     private static readonly Regex TechnicalTailSignalRegex = new(
         @"(?i)(?:480p|576p|720p|1080p|1440p|2160p|4320p|4k|8k|ma10p|web-?dl|webrip|bluray|bdrip|remux|x264|x265|h264|h265|hevc|avc|av1|aac|flac|ac3|eac3|dts|truehd|10bit|8bit|nvenc|multi[-_ ]?subs?)",
         Options,
@@ -40,7 +50,9 @@ internal static class EpisodeBoundaryNormalizer
         var corrected = CorrectEpisodeYearCollision(result);
         if (corrected.EpisodeNumber is not null)
         {
-            return corrected;
+            return ShouldPromoteBareSeriesEpisode(path, corrected)
+                ? PromoteBareSeriesEpisode(corrected)
+                : corrected;
         }
 
         var extended = ExtendedSeasonEpisodeRegex.Match(path.NormalizedStem);
@@ -80,6 +92,23 @@ internal static class EpisodeBoundaryNormalizer
                 });
         }
 
+        if (TryGetLeadingNumberedEpisode(path, out var leadingEpisode, out _))
+        {
+            return new EpisodeExtractionResult(
+                SeasonNumber: null,
+                leadingEpisode,
+                EpisodeEndNumber: null,
+                CourNumber: null,
+                Confidence: 0.90,
+                new[]
+                {
+                    new RecognitionEvidence(
+                        "episode.leading-numbered",
+                        leadingEpisode.ToString(CultureInfo.InvariantCulture),
+                        0.90),
+                });
+        }
+
         return corrected;
     }
 
@@ -94,6 +123,50 @@ internal static class EpisodeBoundaryNormalizer
         }
 
         title = parsedTitle;
+        return true;
+    }
+
+    internal static bool TryGetLeadingNumberedEpisode(
+        NormalizedMediaPath path,
+        out decimal episode,
+        out string episodeTitle)
+    {
+        episode = default;
+        episodeTitle = string.Empty;
+
+        if (!HasSeriesDirectoryContext(path))
+        {
+            return false;
+        }
+
+        var match = LeadingNumberedEpisodeRegex.Match(path.Stem);
+        if (!match.Success ||
+            !decimal.TryParse(
+                match.Groups["episode"].Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out episode) ||
+            episode is < 0 or > 9999 ||
+            IsEpisodeCollision(episode))
+        {
+            return false;
+        }
+
+        var candidate = match.Groups["title"].Value
+            .Trim(' ', '.', '_', '-', '–', '—', '−');
+
+        if (candidate.Length == 0 ||
+            !candidate.Any(static c =>
+                char.IsLetter(c) ||
+                c is >= '\u3040' and <= '\u30ff' ||
+                c is >= '\u3400' and <= '\u4dbf' ||
+                c is >= '\u4e00' and <= '\u9fff' ||
+                c is >= '\uac00' and <= '\ud7af'))
+        {
+            return false;
+        }
+
+        episodeTitle = candidate;
         return true;
     }
 
@@ -147,6 +220,36 @@ internal static class EpisodeBoundaryNormalizer
         return result;
     }
 
+    private static bool ShouldPromoteBareSeriesEpisode(
+        NormalizedMediaPath path,
+        EpisodeExtractionResult result) =>
+        result.Evidence.Any(static item => item.Code == "episode.bare-filename") &&
+        HasSeriesDirectoryContext(path);
+
+    private static EpisodeExtractionResult PromoteBareSeriesEpisode(
+        EpisodeExtractionResult result)
+    {
+        var evidence = new List<RecognitionEvidence>(result.Evidence)
+        {
+            new(
+                "episode.bare-series-context",
+                result.EpisodeNumber?.ToString(CultureInfo.InvariantCulture),
+                0.91),
+        };
+
+        return new EpisodeExtractionResult(
+            result.SeasonNumber,
+            result.EpisodeNumber,
+            result.EpisodeEndNumber,
+            result.CourNumber,
+            Confidence: Math.Max(result.Confidence, 0.91),
+            evidence);
+    }
+
+    private static bool HasSeriesDirectoryContext(NormalizedMediaPath path) =>
+        path.NormalizedDirectorySegments.Any(static directory =>
+            SeriesDirectoryContextRegex.IsMatch(directory));
+
     private static bool TryGetLooseBracketEpisode(
         NormalizedMediaPath path,
         out decimal episode,
@@ -162,14 +265,8 @@ internal static class EpisodeBoundaryNormalizer
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out episode) ||
-            episode is < 0 or > 9999)
-        {
-            return false;
-        }
-
-        var integerEpisode = decimal.ToInt32(episode);
-        if (integerEpisode is 360 or 480 or 576 or 720 or 1080 or 1440 or 2160 or 4320 ||
-            integerEpisode is >= 1900 and <= 2099)
+            episode is < 0 or > 9999 ||
+            IsEpisodeCollision(episode))
         {
             return false;
         }
@@ -193,5 +290,17 @@ internal static class EpisodeBoundaryNormalizer
 
         title = candidate;
         return true;
+    }
+
+    private static bool IsEpisodeCollision(decimal episode)
+    {
+        if (episode != decimal.Truncate(episode))
+        {
+            return false;
+        }
+
+        var integerEpisode = decimal.ToInt32(episode);
+        return integerEpisode is 360 or 480 or 576 or 720 or 1080 or 1440 or 2160 or 4320 ||
+               integerEpisode is >= 1900 and <= 2099;
     }
 }
