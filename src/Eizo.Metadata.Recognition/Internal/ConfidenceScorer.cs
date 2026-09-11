@@ -289,6 +289,18 @@ internal static class ConfidenceScorer
             item.Code == "episode.leading-numbered");
         var hasBareDelimitedIndex = episode.Evidence.Any(static item =>
             item.Code == "episode.bare-delimited");
+        var hasBareTrailingIndex = episode.Evidence.Any(static item =>
+            item.Code == "episode.bare-trailing-release-tag");
+
+        var menuDirectory = domain.Evidence.Any(static item =>
+            item.Code == "special.special.directory" &&
+            string.Equals(item.Value, "MENU", StringComparison.OrdinalIgnoreCase));
+
+        if (menuDirectory &&
+            (hasBareDelimitedIndex || hasBareTrailingIndex))
+        {
+            return true;
+        }
 
         // Real libraries often prefix an explicit OVA/OAD/ONA with a collection
         // index ("25_OVA1") or use the broadcast ordinal before a trailing [OVA].

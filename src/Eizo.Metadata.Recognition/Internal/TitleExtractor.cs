@@ -60,6 +60,10 @@ internal static class TitleExtractor
             @"(?:前編|前篇|前编|後編|後篇|后编|后篇)(?![\p{L}\p{N}])(?:\s*[「『].*?[」』])?",
             Options,
             RegexTimeout),
+        new(
+            @"(?<=\d)\s+END(?=\s*(?:$|\[|\(|【))",
+            Options,
+            RegexTimeout),
     };
 
     private static readonly Regex DomainOnlyNameRegex = new(
@@ -102,12 +106,17 @@ internal static class TitleExtractor
         RegexOptions.CultureInvariant,
         RegexTimeout);
 
+    private static readonly Regex TrailingCopySuffixRegex = new(
+        @"\(\s*\d{1,2}\s*\)\s*$",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+
     private static readonly HashSet<string> GenericDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         "ANIME", "ANIMES", "TV", "TV SERIES", "SERIES", "DRAMA", "DRAMAS",
         "JDRAMA", "J-DRAMA", "MOVIE", "MOVIES", "VIDEO", "VIDEOS", "MEDIA",
         "DOWNLOAD", "DOWNLOADS", "WEBDAV", "OVA", "OAD", "ONA", "SP",
-        "SPECIAL", "SPECIALS", "NCOP", "NCED", "劇場版", "剧场版",
+        "SPECIAL", "SPECIALS", "NCOP", "NCED", "MENU", "劇場版", "剧场版",
     };
 
     internal static TitleExtractionResult Extract(
@@ -210,6 +219,7 @@ internal static class TitleExtractor
         MarkNoiseTokens(path, removal);
         MarkProviderMetadataTokens(path, removal);
         MarkTechnicalSuffix(path, removal);
+        MarkTrailingCopySuffix(path, removal);
         MarkEpisodeSyntax(path, removal);
         MarkTrailingBareEpisode(path, episode, removal);
         MarkLeadingReleaseGroupHeuristic(path, removal);
@@ -355,6 +365,37 @@ internal static class TitleExtractor
             removal,
             suffix.StartIndex,
             path.Stem.Length - suffix.StartIndex);
+    }
+
+    private static void MarkTrailingCopySuffix(
+        NormalizedMediaPath path,
+        bool[] removal)
+    {
+        var match = TrailingCopySuffixRegex.Match(path.Stem);
+        if (!match.Success)
+        {
+            return;
+        }
+
+        var previous = path.Tokens
+            .Where(token => token.Start + token.Length <= match.Index)
+            .LastOrDefault(token =>
+                token.IsBracketed &&
+                ReleaseNoiseClassifier.IsTrailingNoiseTag(token));
+
+        if (previous is null)
+        {
+            return;
+        }
+
+        var betweenStart = previous.Start + previous.Length;
+        var between = path.Stem[betweenStart..match.Index];
+        if (between.Any(c => !char.IsWhiteSpace(c)))
+        {
+            return;
+        }
+
+        Mark(removal, match.Index, match.Length);
     }
 
     private static void MarkEpisodeSyntax(

@@ -31,7 +31,7 @@ internal static class DomainClassifier
         RegexTimeout);
 
     private static readonly Regex FinaleRegex = new(
-        @"(?:最終話|最終回)(?![\p{L}\p{N}])",
+        @"(?:最終話|最終回)(?![\p{L}\p{N}])|(?<=\d)\s+END(?=\s*(?:$|\[|\(|【))",
         Options,
         RegexTimeout);
 
@@ -66,6 +66,7 @@ internal static class DomainClassifier
             ["SPECIALS"] = (MediaKind.Special, SpecialKind.Special),
             ["NCOP"] = (MediaKind.Special, SpecialKind.NcOp),
             ["NCED"] = (MediaKind.Special, SpecialKind.NcEd),
+            ["MENU"] = (MediaKind.Special, SpecialKind.Special),
             ["MOVIE"] = (MediaKind.Movie, SpecialKind.None),
             ["MOVIES"] = (MediaKind.Movie, SpecialKind.None),
             ["劇場版"] = (MediaKind.Movie, SpecialKind.None),
