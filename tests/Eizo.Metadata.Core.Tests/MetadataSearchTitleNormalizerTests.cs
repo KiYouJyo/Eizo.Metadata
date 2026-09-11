@@ -23,6 +23,22 @@ public sealed class MetadataSearchTitleNormalizerTests
         Assert.Contains(expectedVariant, request.Titles, StringComparer.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("鬼灭之刃 S00-S05全", "鬼灭之刃")]
+    [InlineData("鬼灭之刃 Season 1-Season 6", "鬼灭之刃")]
+    [InlineData("鬼灭之刃 S01～S06 COMPLETE", "鬼灭之刃")]
+    public void FromRecognition_StripsCollectionSeasonCoverageFromProviderVariant(
+        string recognizedTitle,
+        string expectedVariant)
+    {
+        var request = MetadataSearchRequest.FromRecognition(
+            CreateRecognition(recognizedTitle),
+            "zh-CN");
+
+        Assert.Equal(recognizedTitle, request.Titles[0]);
+        Assert.Contains(expectedVariant, request.Titles, StringComparer.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void FromRecognition_PreservesSeasonNameWhenItIsPartOfTitle()
     {

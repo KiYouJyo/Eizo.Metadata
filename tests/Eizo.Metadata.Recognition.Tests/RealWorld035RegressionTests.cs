@@ -135,6 +135,18 @@ public sealed class RealWorld035RegressionTests
     }
 
     [Fact]
+    public void Recognize_CurrentSeasonWinsInsideMultiSeasonCollectionFolder()
+    {
+        var result = _engine.Recognize(
+            new RecognitionRequest(
+                "movie/鬼灭之刃(2019) S00-S05全 4K超分/Season 4/鬼灭之刃 S04E03.mkv"));
+
+        Assert.Equal(MediaKind.SeriesEpisode, result.MediaKind);
+        Assert.Equal(4, result.SeasonNumber);
+        Assert.Equal(3m, result.EpisodeNumber);
+    }
+
+    [Fact]
     public void Recognize_DoesNotReuseFranchiseFolderYearForLaterSeason()
     {
         var result = _engine.Recognize(

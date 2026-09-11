@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.8 scope
+## Runtime 0.2.9 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,15 +99,15 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.8 — precision crossline pass.**
+**Metadata Runtime 0.2.9 — season-range correctness pass.**
 
-Metadata 0.2.8 is a narrow real-library pass aimed at crossing 90% without lowering
-AutoResolveThreshold=0.82 or MinimumLead=0.06. Season 1 is treated as the default library
-bucket for weighting purposes so exact release-year evidence stays strong; AFTER STORY is
-recognized as a second-installment marker for sequel matching; and OAD/OVA/special/movie
-subjects receive a mismatch penalty when Recognition requested a regular series episode.
-This targets the remaining Apothecary Diaries, Prisma Illya and CLANNAD clusters while
-preserving the 0.2.7 continuous-series behavior.
+Metadata 0.2.9 fixes a real-library bug exposed by the 0.2.8 Demon Slayer report:
+collection labels such as `S00-S05全`, `Season 1-Season 6`, and `S01～S06 COMPLETE`
+describe library coverage, not the current file's installment. Provider search normalization
+now strips those range tokens, installment scoring ignores them, and file-specific
+Recognition season evidence from `SxxEyy` / the nearest Season directory takes priority
+for Season 2+. Explicit sequel semantics such as `AFTER STORY` can still override a
+generic Season 1 bucket. Resolution safety thresholds remain unchanged at 0.82 / 0.06.
 
 ## License
 
