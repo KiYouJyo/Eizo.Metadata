@@ -279,6 +279,9 @@ public sealed class CachedMetadataProvider : IMetadataProvider
     private string BuildSearchKey(MetadataSearchRequest request)
     {
         var titles = string.Join("\u001f", request.Titles);
-        return $"search|{Name}|{request.RecognitionMediaKind}|{request.Year}|{request.SeasonNumber}|{request.EpisodeNumber}|{request.PreferredLanguage}|{request.Limit}|{titles}";
+        // Provider subject search is work-level, not episode-level. Keeping
+        // season/episode out of this key lets every episode of the same title reuse
+        // the same remote search response; episode lists have their own cache key.
+        return $"search|{Name}|{request.RecognitionMediaKind}|{request.Year}|{request.PreferredLanguage}|{request.Limit}|{titles}";
     }
 }
