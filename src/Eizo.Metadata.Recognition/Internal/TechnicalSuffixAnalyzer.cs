@@ -14,6 +14,11 @@ internal static class TechnicalSuffixAnalyzer
         Options,
         Timeout);
 
+    private static readonly Regex TrailingCopySuffixRegex = new(
+        @"\(\s*\d{1,2}\s*\)\s*$",
+        Options,
+        Timeout);
+
     internal static TechnicalSuffixResult? Analyze(NormalizedMediaPath path)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -24,8 +29,14 @@ internal static class TechnicalSuffixAnalyzer
             var candidate = tokens[i];
             if (!IsPotentialStart(candidate) ||
                 !CanStartSuffix(tokens, i) ||
-                !HasMeaningfulContentBefore(tokens, i) ||
-                CountStrongSignals(tokens, i) < 2)
+                !HasMeaningfulContentBefore(tokens, i))
+            {
+                continue;
+            }
+
+            var strongSignals = CountStrongSignals(tokens, i);
+            if (strongSignals < 2 &&
+                !IsSingleCompositeTailWithCopySuffix(path, candidate))
             {
                 continue;
             }
@@ -145,6 +156,26 @@ internal static class TechnicalSuffixAnalyzer
         }
 
         return false;
+    }
+
+    private static bool IsSingleCompositeTailWithCopySuffix(
+        NormalizedMediaPath path,
+        RecognitionToken candidate)
+    {
+        if (!candidate.IsBracketed ||
+            candidate.Kind != TokenKind.TechnicalGroup)
+        {
+            return false;
+        }
+
+        var copy = TrailingCopySuffixRegex.Match(path.Stem);
+        if (!copy.Success || copy.Index < candidate.Start + candidate.Length)
+        {
+            return false;
+        }
+
+        var between = path.Stem[(candidate.Start + candidate.Length)..copy.Index];
+        return between.All(char.IsWhiteSpace);
     }
 
     private static int CountStrongSignals(
