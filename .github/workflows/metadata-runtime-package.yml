@@ -7,7 +7,7 @@ on:
       - "codex/metadata-runtime-0.2.1"
       - "codex/metadata-runtime-0.2.3"
       - "codex/metadata-runtime-0.2.4"
-      - "codex/metadata-runtime-0.2.9"
+      - "codex/metadata-runtime-0.2.8"
       - "codex/metadata-runtime-0.2.9"
   workflow_dispatch:
 
