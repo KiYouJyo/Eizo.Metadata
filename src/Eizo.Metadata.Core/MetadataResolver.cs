@@ -82,6 +82,42 @@ public sealed class MetadataResolver
                 ? 1.0
                 : best.Score - second.Score;
 
+        if (best is not null &&
+            MetadataMatchScorer.TryGetNearThresholdPromotion(
+                request,
+                best,
+                lead,
+                _options,
+                out var promotionEvidence))
+        {
+            var promotedBest = best with
+            {
+                Score = Math.Min(
+                    1.0,
+                    Math.Max(best.Score, _options.AutoResolveThreshold + 0.005)),
+                Evidence = best.Evidence
+                    .Concat([promotionEvidence])
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+            };
+
+            scored = scored
+                .Select(candidate =>
+                    candidate.Candidate.Id == promotedBest.Candidate.Id
+                        ? promotedBest
+                        : candidate)
+                .OrderByDescending(static candidate => candidate.Score)
+                .ThenBy(static candidate => candidate.Candidate.ProviderRank)
+                .ThenBy(static candidate => candidate.Candidate.Id.Provider, StringComparer.Ordinal)
+                .ToArray();
+
+            best = scored[0];
+            second = scored.Skip(1).FirstOrDefault();
+            lead = second is null
+                ? 1.0
+                : best.Score - second.Score;
+        }
+
         var laterSeasonNeedsStructuralConfirmation =
             request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
             request.SeasonNumber is > 1 &&
@@ -1387,6 +1423,62 @@ internal static class MetadataMatchScorer
         return NormalizeTitle(normalized);
     }
 
+    internal static bool TryGetNearThresholdPromotion(
+        MetadataSearchRequest request,
+        MetadataResolutionCandidate best,
+        double lead,
+        MetadataResolverOptions options,
+        out string evidence)
+    {
+        evidence = string.Empty;
+
+        if (best.Score >= options.AutoResolveThreshold ||
+            best.Score < options.AutoResolveThreshold - 0.02 ||
+            lead < options.MinimumLead ||
+            ScoreKind(request.RecognitionMediaKind, best.Candidate.Id.Kind) < 1.0)
+        {
+            return false;
+        }
+
+        var titleScore = BestTitleScore(request.Titles, best.Candidate.Titles);
+        var structure = ScoreInstallment(
+            request,
+            best.Candidate,
+            out var requestedInstallment,
+            out var candidateInstallment,
+            out var installmentSource);
+
+        var exactInstallment =
+            requestedInstallment is > 0 &&
+            candidateInstallment == requestedInstallment &&
+            structure >= 0.99 &&
+            (installmentSource == "title" || request.SeasonNumber is > 1);
+
+        if (exactInstallment &&
+            titleScore >= 0.82)
+        {
+            evidence =
+                $"near-threshold=exact-installment:title:{titleScore:0.000},lead:{lead:0.000}";
+            return true;
+        }
+
+        var exactYear =
+            request.Year is not null &&
+            best.Candidate.Year == request.Year;
+        var dominantLead = Math.Max(0.12, options.MinimumLead * 2.0);
+
+        if (titleScore >= 0.86 &&
+            lead >= dominantLead &&
+            (exactYear || request.Year is null && lead >= 0.20))
+        {
+            evidence =
+                $"near-threshold=dominant-title:title:{titleScore:0.000},lead:{lead:0.000}";
+            return true;
+        }
+
+        return false;
+    }
+
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
         MetadataSearchCandidate candidate)
@@ -1569,7 +1661,12 @@ internal static class MetadataMatchScorer
                              semantic,
                              StringComparison.Ordinal))
                 {
-                    score = 1.0;
+                    // A derivative OVA, compilation or side story often keeps the
+                    // complete season title as a prefix. Containment is strong
+                    // evidence, but only an exact normalized title deserves 1.0.
+                    score = Math.Max(
+                        0.88,
+                        TitleSimilarity(semanticTitle!, candidate) * 0.96);
                 }
                 else
                 {
