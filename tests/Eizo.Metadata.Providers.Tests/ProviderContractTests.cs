@@ -112,7 +112,7 @@ public sealed class ProviderContractTests
                 2),
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(4, postCount);
+        Assert.Equal(5, postCount);
     }
 
     [Fact]
