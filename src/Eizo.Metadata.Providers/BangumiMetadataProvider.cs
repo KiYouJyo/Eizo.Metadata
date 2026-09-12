@@ -62,7 +62,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
         var titles = request.Titles
             .Where(static title => !string.IsNullOrWhiteSpace(title))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(3)
+            .Take(5)
             .ToArray();
 
         var candidates = new Dictionary<string, MetadataSearchCandidate>(StringComparer.Ordinal);
@@ -74,7 +74,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             // subject behind live events, movies or specials for franchise-heavy
             // queries such as LoveLive!, while our local scorer can recover the
             // right subject once it is present in the candidate set.
-            var providerLimit = Math.Max(25, Math.Clamp(request.Limit, 1, 25));
+            var providerLimit = Math.Max(50, Math.Clamp(request.Limit, 1, 50));
             using var message = CreateRequest(
                 HttpMethod.Post,
                 $"v0/search/subjects?limit={providerLimit}&offset=0");
@@ -141,7 +141,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             .OrderBy(static item => item.ProviderRank)
             .ThenByDescending(static item => item.Popularity ?? 0.0)
             .ThenBy(static item => item.Id.Value, StringComparer.Ordinal)
-            .Take(Math.Max(request.Limit, 25))
+            .Take(Math.Max(request.Limit, 50))
             .ToArray();
 
         var enrichmentLimit = Math.Clamp(_options.SearchAliasEnrichmentLimit, 0, 10);
