@@ -1661,12 +1661,19 @@ internal static class MetadataMatchScorer
                              semantic,
                              StringComparison.Ordinal))
                 {
-                    // A derivative OVA, compilation or side story often keeps the
-                    // complete season title as a prefix. Containment is strong
-                    // evidence, but only an exact normalized title deserves 1.0.
-                    score = Math.Max(
-                        0.88,
-                        TitleSimilarity(semanticTitle!, candidate) * 0.96);
+                    var coverage =
+                        (double)semantic.Length / normalizedCandidate.Length;
+
+                    // A short named arc such as "黄金之风" is intentionally
+                    // embedded in a longer franchise title and remains decisive.
+                    // A semantic title that already covers most of the candidate,
+                    // however, is likely the canonical season plus a derivative
+                    // OVA/compilation suffix and must not tie the exact subject.
+                    score = coverage <= 0.60
+                        ? 1.0
+                        : Math.Max(
+                            0.88,
+                            TitleSimilarity(semanticTitle!, candidate) * 0.96);
                 }
                 else
                 {
