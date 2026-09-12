@@ -8,6 +8,10 @@
     <Project Path="tests/Eizo.Metadata.Recognition.Tests/Eizo.Metadata.Recognition.Tests.csproj" />
     <Project Path="tests/Eizo.Metadata.Core.Tests/Eizo.Metadata.Core.Tests.csproj" />
     <Project Path="tests/Eizo.Metadata.Providers.Tests/Eizo.Metadata.Providers.Tests.csproj" />
+    <Project Path="tests/Eizo.Metadata.Recognition.Shadow.Tests/Eizo.Metadata.Recognition.Shadow.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Eizo.Metadata.Recognition.ShadowCompare/Eizo.Metadata.Recognition.ShadowCompare.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
