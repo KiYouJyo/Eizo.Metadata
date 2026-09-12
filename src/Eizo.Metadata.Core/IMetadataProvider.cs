@@ -17,3 +17,16 @@ public interface IMetadataProvider
         int? seasonNumber = null,
         CancellationToken cancellationToken = default);
 }
+
+
+public sealed record MetadataSubjectRelation(
+    MetadataProviderItemId SubjectId,
+    string Relation,
+    MetadataTitles Titles);
+
+public interface IMetadataRelationProvider
+{
+    Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(
+        MetadataProviderItemId id,
+        CancellationToken cancellationToken = default);
+}
