@@ -230,6 +230,7 @@ public sealed class MetadataResolver
                             relationProvider,
                             resolution.Best.Candidate.Id,
                             request.SeasonNumber.Value,
+                            request.Titles,
                             cancellationToken)
                         .ConfigureAwait(false);
 
@@ -272,6 +273,7 @@ public sealed class MetadataResolver
                                     $"relation-chain=season:{request.SeasonNumber.Value}",
                                     $"relation-chain-path={relationResult.Path}",
                                     $"relation-chain-season-map={relationResult.SeasonMap}",
+                                    $"relation-chain-selection={relationResult.SelectionTrace}",
                                 ])
                                 .Distinct(StringComparer.Ordinal)
                                 .ToArray());
@@ -409,6 +411,7 @@ public sealed class MetadataResolver
         IMetadataRelationProvider relationProvider,
         MetadataProviderItemId baseId,
         int targetSeason,
+        IReadOnlyList<string> requestedTitles,
         CancellationToken cancellationToken)
     {
         if (targetSeason <= 1)
@@ -432,11 +435,13 @@ public sealed class MetadataResolver
         var logicalSeason = 1;
         var path = new List<string> { current.Id.Value };
         var seasonMap = new List<string> { $"1:{current.Id.Value}" };
+        var selectionTrace = new List<string>();
 
-        // Relation graphs can contain cour/part continuations that are distinct
-        // provider subjects but still belong to the same local season. Allow
-        // extra hops while retaining a hard bound and cycle protection.
-        var maxHops = Math.Max(targetSeason * 3, targetSeason + 4);
+        // Provider relation graphs are not guaranteed to be linked lists.
+        // A subject may expose several later sequel-series at once. Traverse
+        // conservatively by ranking only series-level sequel candidates and
+        // requiring a meaningful lead whenever more than one branch remains.
+        var maxHops = Math.Max(targetSeason * 4, targetSeason + 6);
         for (var hop = 0; hop < maxHops && logicalSeason < targetSeason; hop++)
         {
             var relations = await relationProvider
@@ -470,22 +475,34 @@ public sealed class MetadataResolver
                 .Select(static group => group.First())
                 .ToArray();
 
-            if (distinctSeries.Length != 1)
+            if (distinctSeries.Length == 0)
             {
                 return null;
             }
 
-            var next = distinctSeries[0];
+            var selection = SelectNextSeriesSequel(
+                current,
+                distinctSeries,
+                requestedTitles,
+                logicalSeason);
+
+            if (selection is null)
+            {
+                return null;
+            }
+
+            var next = selection.Subject;
+            selectionTrace.Add(
+                $"{current.Id.Value}>{next.Id.Value}:{selection.Score:0.000}");
+
             var currentInstallment = MetadataMatchScorer.GetTitleInstallment(
                 current.Titles);
             var nextInstallment = MetadataMatchScorer.GetTitleInstallment(
                 next.Titles);
 
-            // Example: Attack on Titan "第三季" -> "第三季 Part.2" is a
-            // new provider subject but not a new local Season. When both
-            // adjacent subjects explicitly carry the same installment number,
-            // keep the logical season unchanged. Named-arc chains (Demon
-            // Slayer, JOJO, Free!, etc.) naturally advance one season per hop.
+            // Adjacent provider subjects can be split cours/parts of one local
+            // season. Explicitly equal installment numbers do not consume the
+            // next logical Season.
             if (currentInstallment is null ||
                 nextInstallment is null ||
                 currentInstallment != nextInstallment)
@@ -507,8 +524,121 @@ public sealed class MetadataResolver
         return new RelationChainResult(
             current,
             string.Join(">", path),
-            string.Join(">", seasonMap));
+            string.Join(">", seasonMap),
+            string.Join(";", selectionTrace));
     }
+
+    private static RelationSequelSelection? SelectNextSeriesSequel(
+        MetadataSubject current,
+        IReadOnlyList<MetadataSubject> candidates,
+        IReadOnlyList<string> requestedTitles,
+        int logicalSeason)
+    {
+        if (candidates.Count == 1)
+        {
+            return new RelationSequelSelection(candidates[0], 1.0);
+        }
+
+        var currentTitles = current.Titles
+            .EnumerateAll()
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .ToArray();
+        var currentInstallment = MetadataMatchScorer.GetTitleInstallment(
+            current.Titles);
+
+        var ranked = candidates
+            .Select(candidate =>
+            {
+                var requestAffinity = MetadataMatchScorer.GetFranchiseTitleScore(
+                    requestedTitles,
+                    candidate.Titles);
+                var currentAffinity = MetadataMatchScorer.GetFranchiseTitleScore(
+                    currentTitles,
+                    candidate.Titles);
+                var titleAffinity = Math.Max(requestAffinity, currentAffinity);
+
+                var nextInstallment = MetadataMatchScorer.GetTitleInstallment(
+                    candidate.Titles);
+                var structureScore =
+                    currentInstallment is not null &&
+                    nextInstallment == currentInstallment
+                        ? 1.0
+                        : currentInstallment is not null &&
+                          nextInstallment == currentInstallment + 1
+                            ? 0.96
+                            : nextInstallment == logicalSeason + 1
+                                ? 0.94
+                                : nextInstallment is null
+                                    ? 0.66
+                                    : 0.20;
+
+                var chronologyScore = 0.45;
+                var chronologyValid = true;
+                if (current.ReleaseDate is { } currentDate &&
+                    candidate.ReleaseDate is { } candidateDate)
+                {
+                    var days = candidateDate.DayNumber - currentDate.DayNumber;
+                    if (days < -31)
+                    {
+                        chronologyValid = false;
+                    }
+                    else if (days >= 0)
+                    {
+                        chronologyScore = 1.0 /
+                            (1.0 + days / 365.0);
+                    }
+                    else
+                    {
+                        chronologyScore = 0.30;
+                    }
+                }
+
+                var sideContentPenalty = IsRelationSideContent(candidate.Titles)
+                    ? 0.14
+                    : 0.0;
+
+                var score =
+                    titleAffinity * 0.48 +
+                    chronologyScore * 0.32 +
+                    structureScore * 0.20 -
+                    sideContentPenalty;
+
+                return new RelationSequelSelection(
+                    candidate,
+                    Math.Clamp(score, 0.0, 1.0),
+                    chronologyValid);
+            })
+            .Where(static item => item.ChronologyValid)
+            .OrderByDescending(static item => item.Score)
+            .ThenBy(static item => item.Subject.ReleaseDate)
+            .ThenBy(static item => item.Subject.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        if (ranked.Length == 0 ||
+            ranked[0].Score < 0.56)
+        {
+            return null;
+        }
+
+        if (ranked.Length > 1 &&
+            ranked[0].Score - ranked[1].Score < 0.06)
+        {
+            return null;
+        }
+
+        return ranked[0];
+    }
+
+    private static bool IsRelationSideContent(MetadataTitles titles) =>
+        titles.EnumerateAll().Any(static title =>
+            title.Contains("OVA", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("OAD", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("SPECIAL", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("番外", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("特別篇", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("特别篇", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("総集編", StringComparison.OrdinalIgnoreCase) ||
+            title.Contains("总集篇", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsSequelRelation(string value)
     {
@@ -578,7 +708,13 @@ public sealed class MetadataResolver
     private sealed record RelationChainResult(
         MetadataSubject Subject,
         string Path,
-        string SeasonMap);
+        string SeasonMap,
+        string SelectionTrace);
+
+    private sealed record RelationSequelSelection(
+        MetadataSubject Subject,
+        double Score,
+        bool ChronologyValid = true);
 
     private sealed record ProviderSearchOutcome(
         IReadOnlyList<MetadataSearchCandidate> Candidates,
@@ -645,6 +781,11 @@ internal static class MetadataMatchScorer
     internal static int? GetTitleInstallment(
         MetadataTitles titles) =>
         FindInstallment(titles.EnumerateAll());
+
+    internal static double GetFranchiseTitleScore(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles) =>
+        BestFranchiseTitleScore(requestedTitles, candidateTitles);
 
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
