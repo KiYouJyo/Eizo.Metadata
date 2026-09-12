@@ -24,7 +24,7 @@ public sealed record BangumiMetadataProviderOptions(
     }
 }
 
-public sealed class BangumiMetadataProvider : IMetadataProvider
+public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelationProvider
 {
     private const string ProviderName = "bangumi";
     private readonly HttpClient _httpClient;
@@ -249,6 +249,58 @@ public sealed class BangumiMetadataProvider : IMetadataProvider
             episodeCount,
             new MetadataArtwork(poster, BackdropUrl: null, thumbnail),
             externalIds);
+    }
+
+    public async Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(
+        MetadataProviderItemId id,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateId(id);
+
+        using var message = CreateRequest(
+            HttpMethod.Get,
+            $"v0/subjects/{Uri.EscapeDataString(id.Value)}/subjects");
+        using var response = await _httpClient
+            .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return Array.Empty<MetadataSubjectRelation>();
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = await JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false),
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<MetadataSubjectRelation>();
+        }
+
+        var result = new List<MetadataSubjectRelation>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            var relatedId = item.GetInt32("id");
+            var relation = item.GetString("relation")?.Trim();
+            if (relatedId is null || string.IsNullOrWhiteSpace(relation))
+            {
+                continue;
+            }
+
+            result.Add(
+                new MetadataSubjectRelation(
+                    new MetadataProviderItemId(
+                        ProviderName,
+                        relatedId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        MetadataSubjectKind.Unknown),
+                    relation,
+                    MapTitles(item)));
+        }
+
+        return result;
     }
 
     public async Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
