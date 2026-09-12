@@ -21,6 +21,13 @@ public enum MetadataEpisodeKind
     Other = 5,
 }
 
+public enum MetadataContentKind
+{
+    Unknown = 0,
+    Animation = 1,
+    LiveAction = 2,
+}
+
 public enum MetadataFailureStage
 {
     None = 0,
@@ -530,7 +537,10 @@ public sealed record MetadataSearchCandidate(
     MetadataTitles Titles,
     int? Year,
     int ProviderRank,
-    double? Popularity = null);
+    double? Popularity = null)
+{
+    public MetadataContentKind ContentKind { get; init; } = MetadataContentKind.Unknown;
+}
 
 public sealed record MetadataSubject(
     MetadataProviderItemId Id,
@@ -539,7 +549,10 @@ public sealed record MetadataSubject(
     DateOnly? ReleaseDate,
     int? EpisodeCount,
     MetadataArtwork Artwork,
-    IReadOnlyDictionary<string, string> ExternalIds);
+    IReadOnlyDictionary<string, string> ExternalIds)
+{
+    public MetadataContentKind ContentKind { get; init; } = MetadataContentKind.Unknown;
+}
 
 public sealed record MetadataEpisode(
     string ProviderEpisodeId,
