@@ -65,6 +65,33 @@ public sealed class MetadataResolverTests
             provider.LastTitles);
     }
 
+    [Theory]
+    [InlineData("04. 鲁邦三世part4", "鲁邦三世 第4期")]
+    [InlineData("攻壳机动队:SAC_2045 1-2季", "攻壳机动队:SAC 2045")]
+    [InlineData("东京食尸鬼.Tokyo Ghoul", "Tokyo Ghoul")]
+    [InlineData("弦音 -风舞高中弓道部", "弦音")]
+    public async Task Resolver_ExpandsConservativeProviderSearchVariants(
+        string rawTitle,
+        string expectedVariant)
+    {
+        var provider = new CapturingProvider("capture");
+        var resolver = new MetadataResolver([provider]);
+
+        _ = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                [rawTitle],
+                null,
+                MediaKind.SeriesEpisode,
+                1,
+                1,
+                "zh-CN",
+                10),
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(provider.LastTitles);
+        Assert.Contains(expectedVariant, provider.LastTitles, StringComparer.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task Resolver_PrefersExactTitleYearAndKindMatch()
     {
@@ -322,6 +349,138 @@ public sealed class MetadataResolverTests
 
         Assert.True(result.IsResolved);
         Assert.Equal("2", result.Best!.Candidate.Id.Value);
+    }
+
+    [Fact]
+    public async Task Resolver_ExactNamedSeasonBeatsDerivativeThatOnlyContainsSeasonTitle()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "gig",
+                    "攻壳机动队 S.A.C. 2nd GIG",
+                    2004,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "individual",
+                    "攻壳机动队 S.A.C. 2nd GIG 个别的十一人",
+                    2006,
+                    MetadataSubjectKind.Series,
+                    1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["S02 攻壳机动队 S.A.C. 2nd GIG"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("gig", result.Best!.Candidate.Id.Value);
+        Assert.True(
+            result.Candidates[0].Score - result.Candidates[1].Score >= 0.06);
+    }
+
+    [Fact]
+    public async Task Resolver_PromotesNearThresholdExactInstallmentWithSafeLead()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "s2",
+                    "Example 2nd Season",
+                    2010,
+                    MetadataSubjectKind.Series,
+                    20),
+                Candidate(
+                    "noise",
+                    "Example Movie",
+                    2010,
+                    MetadataSubjectKind.Movie,
+                    0),
+            ]);
+
+        var resolver = new MetadataResolver(
+            [provider],
+            new MetadataResolverOptions(
+                AutoResolveThreshold: 0.90,
+                MinimumLead: 0.06,
+                MaxCandidates: 20));
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["Example"],
+                2020,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("s2", result.Best!.Candidate.Id.Value);
+        Assert.True(result.Best.Score >= 0.90);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.StartsWith(
+                "near-threshold=exact-installment:",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Resolver_PromotesNearThresholdDominantExactTitleWithoutLoweringGlobalGate()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "series",
+                    "AnoHana",
+                    2011,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "noise",
+                    "AnoHana Side Story",
+                    2015,
+                    MetadataSubjectKind.Movie,
+                    20),
+            ]);
+
+        var resolver = new MetadataResolver(
+            [provider],
+            new MetadataResolverOptions(
+                AutoResolveThreshold: 0.90,
+                MinimumLead: 0.06,
+                MaxCandidates: 20));
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["AnoHana"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: null,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("series", result.Best!.Candidate.Id.Value);
+        Assert.True(result.Best.Score >= 0.90);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.StartsWith(
+                "near-threshold=dominant-title:",
+                StringComparison.Ordinal));
     }
 
     [Fact]
