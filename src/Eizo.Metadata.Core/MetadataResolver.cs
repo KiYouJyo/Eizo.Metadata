@@ -82,9 +82,17 @@ public sealed class MetadataResolver
                 ? 1.0
                 : best.Score - second.Score;
 
+        var laterSeasonNeedsStructuralConfirmation =
+            request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
+            request.SeasonNumber is > 1 &&
+            best is not null &&
+            best.Candidate.Id.Kind == MetadataSubjectKind.Series &&
+            MetadataMatchScorer.GetCandidateInstallment(best.Candidate) is null;
+
         var resolved = best is not null &&
                        best.Score >= _options.AutoResolveThreshold &&
-                       lead >= _options.MinimumLead;
+                       lead >= _options.MinimumLead &&
+                       !laterSeasonNeedsStructuralConfirmation;
 
         return new MetadataResolution(
             best,
