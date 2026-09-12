@@ -102,12 +102,12 @@ public sealed record MetadataSearchRequest(
                 destination.Add(title);
             }
 
-            var normalized = MetadataSearchTitleNormalizer.Normalize(title);
-            if (!string.IsNullOrWhiteSpace(normalized) &&
-                !MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(normalized) &&
-                !destination.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            foreach (var variant in MetadataSearchTitleNormalizer.ExpandSearchVariants(title))
             {
-                destination.Add(normalized);
+                if (!destination.Contains(variant, StringComparer.OrdinalIgnoreCase))
+                {
+                    destination.Add(variant);
+                }
             }
         }
 
@@ -132,7 +132,7 @@ public sealed record MetadataSearchRequest(
                    MetadataSearchTitleNormalizer.TryExtractTrailingYear(recognition.Title);
 
         return new MetadataSearchRequest(
-            titles.Take(6).ToArray(),
+            titles.Take(8).ToArray(),
             year,
             recognition.MediaKind,
             recognition.SeasonNumber,
@@ -169,8 +169,28 @@ internal static class MetadataSearchTitleNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex CompactSeasonCoverageRangeRegex = new(
+        @"(?<![\p{L}\p{N}])(?:第?\s*)?[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:-|~|～|–|—|−|TO|THROUGH|至|到)\s*(?:第?\s*)?[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:季|期)(?:\s*(?:全|全集|COMPLETE|ALL))?",
+        Options,
+        Timeout);
+
     private static readonly Regex TrailingYearRegex = new(
         @"(?:[. _-]+|\s*\()(?<year>(?:19|20)\d{2})\)?\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex TrailingPartRegex = new(
+        @"\s*PART\s*0?(?<n>\d{1,2})\s*$",
+        Options,
+        Timeout);
+
+    private static readonly Regex SpacedSubtitleSeparatorRegex = new(
+        @"\s+[-–—−]\s*",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    private static readonly Regex CjkLatinBilingualRegex = new(
+        @"^(?<cjk>.+[\u3040-\u30ff\u3400-\u9fff])\s+(?<latin>[A-Z][A-Z0-9 '&+:/-]{2,})$",
         Options,
         Timeout);
 
@@ -255,8 +275,9 @@ internal static class MetadataSearchTitleNormalizer
             return false;
         }
 
-        return SeasonCoverageRangeRegex.IsMatch(
-            value.Normalize(NormalizationForm.FormKC));
+        var normalized = value.Normalize(NormalizationForm.FormKC);
+        return SeasonCoverageRangeRegex.IsMatch(normalized) ||
+               CompactSeasonCoverageRangeRegex.IsMatch(normalized);
     }
 
     internal static bool IsWeakStandaloneTitle(string? value)
@@ -267,13 +288,18 @@ internal static class MetadataSearchTitleNormalizer
         }
 
         var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
-        var withoutCoverage = SeasonCoverageRangeRegex
-            .Replace(normalized, string.Empty)
+        var withoutCoverage = CompactSeasonCoverageRangeRegex
+            .Replace(
+                SeasonCoverageRangeRegex.Replace(normalized, string.Empty),
+                string.Empty)
             .Trim();
+        var hasCoverage =
+            SeasonCoverageRangeRegex.IsMatch(normalized) ||
+            CompactSeasonCoverageRangeRegex.IsMatch(normalized);
 
         return normalized.Length < 2 ||
                WeakStandaloneTitleRegex.IsMatch(normalized) ||
-               (SeasonCoverageRangeRegex.IsMatch(normalized) &&
+               (hasCoverage &&
                 withoutCoverage is "" or "全" or "全集") ||
                BracketOnlyTitleRegex.IsMatch(normalized) ||
                ReleaseGroupOnlyRegex.IsMatch(normalized);
@@ -294,6 +320,7 @@ internal static class MetadataSearchTitleNormalizer
         normalized = ProviderIdSuffixRegex.Replace(normalized, string.Empty);
         normalized = LeadingLibraryOrdinalRegex.Replace(normalized, string.Empty);
         normalized = SeasonCoverageRangeRegex.Replace(normalized, " ");
+        normalized = CompactSeasonCoverageRangeRegex.Replace(normalized, " ");
 
         if (TryExtractNamedSeasonSemanticTitle(normalized, out var namedSeasonTitle))
         {
@@ -306,6 +333,61 @@ internal static class MetadataSearchTitleNormalizer
         normalized = MultiWhitespaceRegex.Replace(normalized, " ").Trim();
 
         return normalized.Trim(' ', '-', '–', '—', '−', '_', '.');
+    }
+
+    internal static IReadOnlyList<string> ExpandSearchVariants(string value)
+    {
+        var variants = new List<string>();
+
+        static void Add(List<string> destination, string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return;
+            }
+
+            var trimmed = candidate.Trim(' ', '-', '–', '—', '−', '_', '.');
+            if (trimmed.Length < 2 ||
+                IsWeakStandaloneTitle(trimmed) ||
+                destination.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            destination.Add(trimmed);
+        }
+
+        var normalized = Normalize(value);
+        Add(variants, normalized);
+
+        var subtitle = SpacedSubtitleSeparatorRegex.Match(normalized);
+        if (subtitle.Success && subtitle.Index >= 2)
+        {
+            Add(variants, normalized[..subtitle.Index]);
+        }
+
+        var part = TrailingPartRegex.Match(normalized);
+        if (part.Success &&
+            int.TryParse(part.Groups["n"].Value, out var partNumber) &&
+            partNumber is >= 1 and <= 20)
+        {
+            var family = normalized[..part.Index]
+                .Trim(' ', '-', '–', '—', '−', '_', '.');
+            Add(variants, family);
+            if (family.Length >= 2)
+            {
+                Add(variants, $"{family} 第{partNumber}期");
+            }
+        }
+
+        var bilingual = CjkLatinBilingualRegex.Match(normalized);
+        if (bilingual.Success)
+        {
+            Add(variants, bilingual.Groups["cjk"].Value);
+            Add(variants, bilingual.Groups["latin"].Value);
+        }
+
+        return variants;
     }
 }
 
@@ -338,12 +420,12 @@ internal static class MetadataSearchRequestNormalizer
                 titles.Add(title);
             }
 
-            var normalized = MetadataSearchTitleNormalizer.Normalize(title);
-            if (!string.IsNullOrWhiteSpace(normalized) &&
-                !MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(normalized) &&
-                !titles.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            foreach (var variant in MetadataSearchTitleNormalizer.ExpandSearchVariants(title))
             {
-                titles.Add(normalized);
+                if (!titles.Contains(variant, StringComparer.OrdinalIgnoreCase))
+                {
+                    titles.Add(variant);
+                }
             }
         }
 
@@ -354,7 +436,7 @@ internal static class MetadataSearchRequestNormalizer
 
         return request with
         {
-            Titles = titles.Take(8).ToArray(),
+            Titles = titles.Take(10).ToArray(),
             Limit = Math.Clamp(request.Limit, 1, 25),
         };
     }
