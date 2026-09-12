@@ -21,6 +21,34 @@ public enum MetadataEpisodeKind
     Other = 5,
 }
 
+public enum MetadataFailureStage
+{
+    None = 0,
+    Search = 1,
+    CandidateRanking = 2,
+    InstallmentMapping = 3,
+    SubjectResolution = 4,
+    EpisodeMapping = 5,
+    ProviderFetch = 6,
+    MetadataMerge = 7,
+}
+
+public enum MetadataFailureReason
+{
+    None = 0,
+    MissingSearchTitles = 1,
+    NoCandidates = 2,
+    ProviderErrorNoCandidates = 3,
+    BelowAutoResolveThreshold = 4,
+    InsufficientLead = 5,
+    StructuralConfirmationRequired = 6,
+    ProviderNotRegistered = 7,
+    SubjectNotFound = 8,
+    SubjectFetchFailed = 9,
+    EpisodeNotFound = 10,
+    EpisodeFetchFailed = 11,
+}
+
 public sealed record MetadataProviderItemId(
     string Provider,
     string Value,
@@ -539,13 +567,33 @@ public sealed record MetadataResolution(
     bool IsResolved,
     double Confidence,
     IReadOnlyList<MetadataResolutionCandidate> Candidates,
-    IReadOnlyList<MetadataProviderError> ProviderErrors);
+    IReadOnlyList<MetadataProviderError> ProviderErrors)
+{
+    public MetadataFailureStage FailureStage { get; init; } = MetadataFailureStage.None;
+
+    public MetadataFailureReason FailureReason { get; init; } = MetadataFailureReason.None;
+
+    public double Lead { get; init; }
+
+    public bool NeedsReview =>
+        !IsResolved ||
+        FailureStage != MetadataFailureStage.None;
+}
 
 public sealed record MetadataEnrichmentResult(
     MetadataResolution Resolution,
     MetadataSubject? Subject,
     MetadataEpisode? Episode,
-    IReadOnlyList<MetadataProviderError> ProviderErrors);
+    IReadOnlyList<MetadataProviderError> ProviderErrors)
+{
+    public MetadataFailureStage FailureStage { get; init; } = MetadataFailureStage.None;
+
+    public MetadataFailureReason FailureReason { get; init; } = MetadataFailureReason.None;
+
+    public bool NeedsReview =>
+        !Resolution.IsResolved ||
+        FailureStage != MetadataFailureStage.None;
+}
 
 public sealed record MetadataResolverOptions(
     double AutoResolveThreshold = 0.82,

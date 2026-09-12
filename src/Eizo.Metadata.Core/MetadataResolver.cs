@@ -43,7 +43,12 @@ public sealed class MetadataResolver
                 IsResolved: false,
                 Confidence: 0.0,
                 Candidates: Array.Empty<MetadataResolutionCandidate>(),
-                ProviderErrors: Array.Empty<MetadataProviderError>());
+                ProviderErrors: Array.Empty<MetadataProviderError>())
+            {
+                FailureStage = MetadataFailureStage.Search,
+                FailureReason = MetadataFailureReason.MissingSearchTitles,
+                Lead = 0.0,
+            };
         }
 
         // Normalize at the resolver boundary so every host benefits, including
@@ -133,12 +138,46 @@ public sealed class MetadataResolver
                        lead >= _options.MinimumLead &&
                        !laterSeasonNeedsStructuralConfirmation;
 
+        var failureStage = MetadataFailureStage.None;
+        var failureReason = MetadataFailureReason.None;
+
+        if (!resolved)
+        {
+            if (best is null)
+            {
+                failureStage = MetadataFailureStage.Search;
+                failureReason = errors.Length > 0
+                    ? MetadataFailureReason.ProviderErrorNoCandidates
+                    : MetadataFailureReason.NoCandidates;
+            }
+            else if (best.Score < _options.AutoResolveThreshold)
+            {
+                failureStage = MetadataFailureStage.CandidateRanking;
+                failureReason = MetadataFailureReason.BelowAutoResolveThreshold;
+            }
+            else if (lead < _options.MinimumLead)
+            {
+                failureStage = MetadataFailureStage.CandidateRanking;
+                failureReason = MetadataFailureReason.InsufficientLead;
+            }
+            else if (laterSeasonNeedsStructuralConfirmation)
+            {
+                failureStage = MetadataFailureStage.InstallmentMapping;
+                failureReason = MetadataFailureReason.StructuralConfirmationRequired;
+            }
+        }
+
         return new MetadataResolution(
             best,
             resolved,
             best?.Score ?? 0.0,
             scored,
-            errors);
+            errors)
+        {
+            FailureStage = failureStage,
+            FailureReason = failureReason,
+            Lead = lead,
+        };
     }
 
     public async Task<MetadataSubject?> ResolveSubjectAsync(
@@ -225,6 +264,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedBest,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedScore,
                             Candidates = candidates,
                         };
@@ -314,6 +357,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedCandidate,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedCandidate.Score,
                             Candidates = remainingCandidates
                                 .Prepend(promotedCandidate)
@@ -420,6 +467,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedCandidate,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedCandidate.Score,
                             Candidates = candidates,
                         };
@@ -444,7 +495,11 @@ public sealed class MetadataResolver
                 resolution,
                 Subject: null,
                 Episode: null,
-                errors);
+                errors)
+            {
+                FailureStage = resolution.FailureStage,
+                FailureReason = resolution.FailureReason,
+            };
         }
 
         var id = resolution.Best.Candidate.Id;
@@ -481,7 +536,11 @@ public sealed class MetadataResolver
                 id.Provider,
                 "ProviderNotRegistered",
                 "The resolved provider is no longer registered."));
-            return new MetadataEnrichmentResult(resolution, null, null, errors);
+            return new MetadataEnrichmentResult(resolution, null, null, errors)
+            {
+                FailureStage = MetadataFailureStage.ProviderFetch,
+                FailureReason = MetadataFailureReason.ProviderNotRegistered,
+            };
         }
 
         try
@@ -500,7 +559,11 @@ public sealed class MetadataResolver
                 provider.Name,
                 exception.GetType().Name,
                 exception.Message));
-            return new MetadataEnrichmentResult(resolution, null, null, errors);
+            return new MetadataEnrichmentResult(resolution, null, null, errors)
+            {
+                FailureStage = MetadataFailureStage.ProviderFetch,
+                FailureReason = MetadataFailureReason.SubjectFetchFailed,
+            };
         }
 
         if (subject is not null &&
@@ -571,6 +634,8 @@ public sealed class MetadataResolver
             }
         }
 
+        var enrichmentFailureStage = MetadataFailureStage.None;
+        var enrichmentFailureReason = MetadataFailureReason.None;
         MetadataEpisode? episode = null;
         if (subject is not null &&
             id.Kind == MetadataSubjectKind.Series &&
@@ -594,6 +659,24 @@ public sealed class MetadataResolver
                     provider.Name,
                     exception.GetType().Name,
                     exception.Message));
+                enrichmentFailureStage = MetadataFailureStage.ProviderFetch;
+                enrichmentFailureReason = MetadataFailureReason.EpisodeFetchFailed;
+            }
+        }
+
+        if (enrichmentFailureStage == MetadataFailureStage.None)
+        {
+            if (subject is null)
+            {
+                enrichmentFailureStage = MetadataFailureStage.SubjectResolution;
+                enrichmentFailureReason = MetadataFailureReason.SubjectNotFound;
+            }
+            else if (id.Kind == MetadataSubjectKind.Series &&
+                     episodeRequest.EpisodeNumber is not null &&
+                     episode is null)
+            {
+                enrichmentFailureStage = MetadataFailureStage.EpisodeMapping;
+                enrichmentFailureReason = MetadataFailureReason.EpisodeNotFound;
             }
         }
 
@@ -601,7 +684,11 @@ public sealed class MetadataResolver
             resolution,
             subject,
             episode,
-            errors);
+            errors)
+        {
+            FailureStage = enrichmentFailureStage,
+            FailureReason = enrichmentFailureReason,
+        };
     }
 
     private bool CanProbeContinuousSeries(
