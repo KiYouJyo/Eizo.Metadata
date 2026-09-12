@@ -62,7 +62,19 @@ internal static class EpisodeTitleExtractor
 
         foreach (var (regex, code, confidence) in Patterns)
         {
-            var match = regex.Match(path.Stem);
+            Match match;
+            try
+            {
+                match = regex.Match(path.Stem);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                // Episode-title extraction is optional enrichment. Pathological
+                // Unicode/repetition must never make the recognition pipeline
+                // fail merely because one bounded regex could not decide in time.
+                continue;
+            }
+
             if (!match.Success)
             {
                 continue;
