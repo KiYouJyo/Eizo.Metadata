@@ -38,7 +38,7 @@ Provider-neutral metadata orchestration:
 
 Initial online providers:
 
-- **Bangumi** public `api.bgm.tv/v0` search, subject and episode APIs;
+- **Bangumi** public `api.bgm.tv/v0` search, subject, related-subject and episode APIs;
 - **TMDB** v3 movie/TV search, subject details, external IDs and season episodes.
 
 HTTP clients are injected by the host. Provider tests use fake HTTP handlers and never
