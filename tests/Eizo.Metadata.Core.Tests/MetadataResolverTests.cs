@@ -985,8 +985,10 @@ public sealed class MetadataResolverTests
                     Array.Empty<MetadataSubjectRelation>());
             }
 
-            var sequelIds = node.Sequels ??
-                            (node.Sequel is null ? [] : [node.Sequel]);
+            IReadOnlyList<string> sequelIds = node.Sequels ??
+                (node.Sequel is null
+                    ? Array.Empty<string>()
+                    : new[] { node.Sequel });
 
             return Task.FromResult<IReadOnlyList<MetadataSubjectRelation>>(
                 sequelIds
