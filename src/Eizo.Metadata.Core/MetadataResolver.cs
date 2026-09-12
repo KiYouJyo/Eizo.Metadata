@@ -1037,7 +1037,7 @@ internal static class MetadataMatchScorer
         if (namedSeasonSemanticScore >= 0.88)
         {
             titleScore = Math.Max(titleScore, namedSeasonSemanticScore);
-            structure = Math.Max(structure, 0.92);
+            structure = 1.0;
             strongInstallmentEvidence = true;
             evidence.Add($"named-season-semantic={namedSeasonSemanticScore:0.000}");
         }
@@ -1195,7 +1195,7 @@ internal static class MetadataMatchScorer
                              semantic,
                              StringComparison.Ordinal))
                 {
-                    score = 0.96;
+                    score = 1.0;
                 }
                 else
                 {
