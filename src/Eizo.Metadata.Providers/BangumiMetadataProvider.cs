@@ -62,7 +62,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
         var titles = request.Titles
             .Where(static title => !string.IsNullOrWhiteSpace(title))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(5)
+            .Take(7)
             .ToArray();
 
         var candidates = new Dictionary<string, MetadataSearchCandidate>(StringComparer.Ordinal);
