@@ -610,6 +610,52 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task Resolver_PromotesExactYearOverHigherRankUndatedDuplicate()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                CandidateOptionalYear(
+                    "dated",
+                    "刀剑神域",
+                    2012,
+                    MetadataSubjectKind.Series,
+                    6),
+                CandidateOptionalYear(
+                    "undated",
+                    "刀剑神域",
+                    null,
+                    MetadataSubjectKind.Series,
+                    0),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                [
+                    "Sword Art Online",
+                    "刀剑神域",
+                    "[VCB-Studio] Sword Art Online 刀剑神域 [S1 Reseed Fin]",
+                ],
+                2012,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: null,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("dated", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.StartsWith(
+                "exact-year-over-undated-duplicate=",
+                StringComparison.Ordinal));
+        Assert.True(result.Lead >= 0.06);
+    }
+
+    [Fact]
     public async Task EnrichAsync_PromotesExactLongRunningSeriesWhenLocalSeasonIsOnlyAPartition()
     {
         var provider = new LongRunningSeriesProvider(

@@ -150,6 +150,67 @@ public sealed class ProviderClosureTests
             StringComparer.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task Bangumi_DoesNotBridgeBroadcastDerivativeAsCanonicalSeries()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Json("""
+                    {
+                      "data": [
+                        {
+                          "id": 198872,
+                          "name": "Re：ゼロから始める異世界ラジオ生活",
+                          "name_cn": "Re：从零开始的异世界广播生活",
+                          "date": "2016-03-28",
+                          "platform": "WEB"
+                        }
+                      ],
+                      "total": 1,
+                      "limit": 50,
+                      "offset": 0
+                    }
+                    """);
+            }
+
+            return Json("""
+                {
+                  "id": 198872,
+                  "name": "Re：ゼロから始める異世界ラジオ生活",
+                  "name_cn": "Re：从零开始的异世界广播生活",
+                  "date": "2016-03-28",
+                  "platform": "WEB",
+                  "eps": 33
+                }
+                """);
+        });
+
+        var provider = new BangumiMetadataProvider(
+            new HttpClient(handler),
+            new BangumiMetadataProviderOptions(
+                "KiYouJyo/Eizo/0.3.9 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 1));
+
+        var results = await provider.SearchAsync(
+            new MetadataSearchRequest(
+                ["Re：从零开始的异世界生活"],
+                2016,
+                MediaKind.SeriesEpisode,
+                1,
+                1,
+                "zh-CN",
+                10),
+            TestContext.Current.CancellationToken);
+
+        var candidate = Assert.Single(results);
+        Assert.DoesNotContain(
+            "Re：从零开始的异世界生活",
+            candidate.Titles.Aliases,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     private static HttpResponseMessage Json(string json) =>
         new(HttpStatusCode.OK)
         {

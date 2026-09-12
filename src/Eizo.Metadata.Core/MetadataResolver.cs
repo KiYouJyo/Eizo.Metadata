@@ -123,6 +123,46 @@ public sealed class MetadataResolver
                 : best.Score - second.Score;
         }
 
+        if (best is not null &&
+            second is not null &&
+            MetadataMatchScorer.TryGetExactYearDuplicatePromotion(
+                request,
+                best,
+                second,
+                lead,
+                _options,
+                out var yearPromotionEvidence))
+        {
+            var promotedBest = best with
+            {
+                Score = Math.Min(
+                    1.0,
+                    Math.Max(
+                        best.Score,
+                        second.Score + _options.MinimumLead + 0.005)),
+                Evidence = best.Evidence
+                    .Concat([yearPromotionEvidence])
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+            };
+
+            scored = scored
+                .Select(candidate =>
+                    candidate.Candidate.Id == promotedBest.Candidate.Id
+                        ? promotedBest
+                        : candidate)
+                .OrderByDescending(static candidate => candidate.Score)
+                .ThenBy(static candidate => candidate.Candidate.ProviderRank)
+                .ThenBy(static candidate => candidate.Candidate.Id.Provider, StringComparer.Ordinal)
+                .ToArray();
+
+            best = scored[0];
+            second = scored.Skip(1).FirstOrDefault();
+            lead = second is null
+                ? 1.0
+                : best.Score - second.Score;
+        }
+
         var laterSeasonNeedsStructuralConfirmation =
             request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
             request.SeasonNumber is > 1 &&
@@ -1542,7 +1582,7 @@ internal static class MetadataMatchScorer
             (installmentSource == "title" || request.SeasonNumber is > 1);
 
         if (exactInstallment &&
-            titleScore >= 0.82)
+            titleScore >= 0.81)
         {
             evidence =
                 $"near-threshold=exact-installment:title:{titleScore:0.000},lead:{lead:0.000}";
@@ -1564,6 +1604,53 @@ internal static class MetadataMatchScorer
         }
 
         return false;
+    }
+
+    internal static bool TryGetExactYearDuplicatePromotion(
+        MetadataSearchRequest request,
+        MetadataResolutionCandidate best,
+        MetadataResolutionCandidate second,
+        double lead,
+        MetadataResolverOptions options,
+        out string evidence)
+    {
+        evidence = string.Empty;
+
+        if (request.Year is null ||
+            best.Candidate.Year != request.Year ||
+            second.Candidate.Year is not null ||
+            best.Candidate.Id.Kind != second.Candidate.Id.Kind ||
+            best.Score < options.AutoResolveThreshold ||
+            lead >= options.MinimumLead ||
+            !HasExactTitleMatch(request.Titles, best.Candidate.Titles) ||
+            !HasExactTitleMatch(request.Titles, second.Candidate.Titles) ||
+            !ShareExactTitleIdentity(
+                best.Candidate.Titles,
+                second.Candidate.Titles))
+        {
+            return false;
+        }
+
+        evidence =
+            $"exact-year-over-undated-duplicate=year:{request.Year.Value},lead:{lead:0.000}";
+        return true;
+    }
+
+    private static bool ShareExactTitleIdentity(
+        MetadataTitles left,
+        MetadataTitles right)
+    {
+        var leftTitles = left
+            .EnumerateAll()
+            .Select(NormalizeTitle)
+            .Where(static value => value.Length >= 3)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return right
+            .EnumerateAll()
+            .Select(NormalizeTitle)
+            .Where(static value => value.Length >= 3)
+            .Any(leftTitles.Contains);
     }
 
     internal static MetadataResolutionCandidate Score(
