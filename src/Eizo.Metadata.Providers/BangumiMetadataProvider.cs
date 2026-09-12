@@ -637,26 +637,7 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             return false;
         }
 
-        var shared = 0;
-        var candidateIndex = 0;
-        foreach (var token in requested)
-        {
-            while (candidateIndex < candidate.Count &&
-                   !string.Equals(token, candidate[candidateIndex], StringComparison.Ordinal))
-            {
-                candidateIndex++;
-            }
-
-            if (candidateIndex >= candidate.Count)
-            {
-                continue;
-            }
-
-            shared++;
-            candidateIndex++;
-        }
-
-        return shared >= 4;
+        return requested[0].Length + requested[1].Length + requested[2].Length >= 10;
     }
 
     private static IReadOnlyList<string> GetLatinTokens(string value)
