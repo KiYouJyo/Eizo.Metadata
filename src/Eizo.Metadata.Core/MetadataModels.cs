@@ -175,7 +175,7 @@ internal static class MetadataSearchTitleNormalizer
         Timeout);
 
     private static readonly Regex TrailingYearRegex = new(
-        @"(?:[. _-]+|\s*\()(?<year>(?:19|20)\d{2})\)?\s*$",
+        @"(?:[. _-]+|\s*\()(?<year>(?:19\d{2}|20[0-3]\d))\)?\s*$",
         Options,
         Timeout);
 
@@ -190,7 +190,7 @@ internal static class MetadataSearchTitleNormalizer
         Timeout);
 
     private static readonly Regex CjkLatinBilingualRegex = new(
-        @"^(?<cjk>.+[\u3040-\u30ff\u3400-\u9fff])\s+(?<latin>[A-Z][A-Z0-9 '&+:/-]{2,})$",
+        @"^(?<cjk>.+[\u3040-\u30ff\u3400-\u9fff])\s*[._·|｜]+\s*(?<latin>[A-Z][A-Z0-9 '&+:/-]{2,})$",
         Options,
         Timeout);
 
@@ -380,11 +380,14 @@ internal static class MetadataSearchTitleNormalizer
             }
         }
 
-        var bilingual = CjkLatinBilingualRegex.Match(normalized);
+        var sourceNormalized = value
+            .Normalize(NormalizationForm.FormKC)
+            .Trim();
+        var bilingual = CjkLatinBilingualRegex.Match(sourceNormalized);
         if (bilingual.Success)
         {
-            Add(variants, bilingual.Groups["cjk"].Value);
-            Add(variants, bilingual.Groups["latin"].Value);
+            Add(variants, Normalize(bilingual.Groups["cjk"].Value));
+            Add(variants, Normalize(bilingual.Groups["latin"].Value));
         }
 
         return variants;
