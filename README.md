@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.13 scope
+## Runtime 0.2.14 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,20 +99,14 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.13 — named-season and subject-span pass.**
+**Metadata Runtime 0.2.14 — subject-span diagnostics hotfix.**
 
-Metadata 0.2.13 addresses libraries where a local season number is not the same thing as
-a provider subject number. Named season folders such as `第五季 黄金之风` now contribute
-the semantic title `黄金之风` as a provider-search and scoring signal, so a descriptive
-arc name can outweigh a mismatched Sxx file number without hard-coded franchise IDs.
-The resolver also supports a single local season spanning multiple provider subjects:
-when a resolved subject runs out of episodes, a conservative same-season sequel
-continuation can carry the remaining local episode number into the next provider subject
-with an explicit episode offset. Finally, single-character title similarity now requires
-actual equality instead of matching merely on the first character, preventing short
-false candidates such as `咒` from outranking `剧场版 咒术回战 0`. Existing 0.82 / 0.06
-gates, relation-branch ranking, season-range handling, and ambiguity safeguards remain
-unchanged.
+Metadata 0.2.14 keeps the 0.2.13 named-season semantics, single-character title fix,
+and cross-subject episode continuation unchanged. When an overflowing local episode
+moves from an exhausted provider subject into its same-season continuation, the exhausted
+subject is now removed from the final ranked candidate set. This keeps the host's
+Best/Second/Lead diagnostics consistent with the structurally resolved final subject and
+prevents a false `InsufficientLead` reason from appearing beside a successful result.
 
 ## License
 
