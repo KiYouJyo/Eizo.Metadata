@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.9 scope
+## Runtime 0.2.10 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,15 +99,17 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.9 — season-range correctness pass.**
+**Metadata Runtime 0.2.10 — relation-aware sequel pass.**
 
-Metadata 0.2.9 fixes a real-library bug exposed by the 0.2.8 Demon Slayer report:
-collection labels such as `S00-S05全`, `Season 1-Season 6`, and `S01～S06 COMPLETE`
-describe library coverage, not the current file's installment. Provider search normalization
-now strips those range tokens, installment scoring ignores them, and file-specific
-Recognition season evidence from `SxxEyy` / the nearest Season directory takes priority
-for Season 2+. Explicit sequel semantics such as `AFTER STORY` can still override a
-generic Season 1 bucket. Resolution safety thresholds remain unchanged at 0.82 / 0.06.
+Metadata 0.2.10 builds on the 0.2.9 season-range fix and addresses franchises whose
+provider subjects use named arcs instead of numeric seasons. Providers may expose an
+optional related-subject graph; Bangumi uses the public v0 subject-relations endpoint.
+When ordinary scoring remains unresolved for an exact base title and Recognition has
+Season 2+, the resolver follows only a unique series-level sequel edge at each step.
+A unique chain can therefore map local seasons to named arcs without hard-coded franchise
+tables. Ambiguous sequel branches, provider failures, movies, and non-series relations
+remain unresolved. The existing 0.82 / 0.06 safety gates and long-running-series local
+partition behavior are preserved.
 
 ## License
 
