@@ -602,6 +602,11 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
                     continue;
                 }
 
+                if (HasDerivativeDescriptorMismatch(requestTitle, candidateTitle))
+                {
+                    continue;
+                }
+
                 if (HasStrongLatinAnchorIdentity(requestTitle, candidateTitle) ||
                     HasCjkInsertedDescriptorIdentity(requestTitle, candidateTitle))
                 {
@@ -611,6 +616,45 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
         }
 
         return null;
+    }
+
+    private static bool HasDerivativeDescriptorMismatch(
+        string requestTitle,
+        string candidateTitle)
+    {
+        var request = requestTitle
+            .Normalize(System.Text.NormalizationForm.FormKC)
+            .ToUpperInvariant();
+        var candidate = candidateTitle
+            .Normalize(System.Text.NormalizationForm.FormKC)
+            .ToUpperInvariant();
+
+        return HasDerivativeDescriptor(candidate) &&
+               !HasDerivativeDescriptor(request);
+    }
+
+    private static bool HasDerivativeDescriptor(string value)
+    {
+        if (value.Contains("广播", StringComparison.Ordinal) ||
+            value.Contains("廣播", StringComparison.Ordinal) ||
+            value.Contains("ラジオ", StringComparison.Ordinal) ||
+            value.Contains("迷你", StringComparison.Ordinal) ||
+            value.Contains("ミニ", StringComparison.Ordinal) ||
+            value.Contains("舞台", StringComparison.Ordinal) ||
+            value.Contains("ミュージカル", StringComparison.Ordinal) ||
+            value.Contains("FANDISC", StringComparison.Ordinal) ||
+            value.Contains("FAN DISC", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var tokens = GetLatinTokens(value);
+        return tokens.Contains("RADIO", StringComparer.Ordinal) ||
+               tokens.Contains("TRAILER", StringComparer.Ordinal) ||
+               tokens.Contains("MENU", StringComparer.Ordinal) ||
+               tokens.Contains("PV", StringComparer.Ordinal) ||
+               tokens.Contains("CM", StringComparer.Ordinal) ||
+               tokens.Contains("MUSICAL", StringComparer.Ordinal);
     }
 
     private static bool HasStrongLatinAnchorIdentity(string requestTitle, string candidateTitle)
