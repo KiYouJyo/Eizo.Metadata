@@ -23,6 +23,7 @@ public sealed class ProviderContractTests
                   "data": [
                     {
                       "id": 253,
+                      "type": 2,
                       "name": "攻殻機動隊 STAND ALONE COMPLEX",
                       "name_cn": "攻壳机动队 STAND ALONE COMPLEX",
                       "date": "2002-10-01",
@@ -58,6 +59,7 @@ public sealed class ProviderContractTests
         Assert.Equal(MetadataSubjectKind.Series, candidate.Id.Kind);
         Assert.Equal("攻壳机动队 STAND ALONE COMPLEX", candidate.Titles.Primary);
         Assert.Equal(2002, candidate.Year);
+        Assert.Equal(MetadataContentKind.Animation, candidate.ContentKind);
     }
 
 
@@ -241,6 +243,39 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public async Task Bangumi_GetSubjectClassifiesLiveAction()
+    {
+        var handler = new RecordingHandler(_ =>
+            Json("""
+                {
+                  "id": 500,
+                  "type": 6,
+                  "name": "ドラゴン桜",
+                  "name_cn": "龙樱",
+                  "date": "2005-07-08",
+                  "platform": "电视剧",
+                  "eps": 11
+                }
+                """));
+
+        var provider = new BangumiMetadataProvider(
+            new HttpClient(handler),
+            new BangumiMetadataProviderOptions(
+                "KiYouJyo/Eizo/0.3.10 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 0));
+
+        var subject = await provider.GetSubjectAsync(
+            new MetadataProviderItemId(
+                "bangumi",
+                "500",
+                MetadataSubjectKind.Series),
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(subject);
+        Assert.Equal(MetadataContentKind.LiveAction, subject.ContentKind);
+    }
+
+    [Fact]
     public async Task Tmdb_SearchUsesBearerTokenAndMapsTvCandidate()
     {
         var handler = new RecordingHandler(request =>
@@ -259,6 +294,7 @@ public sealed class ProviderContractTests
                       "name": "Steins;Gate",
                       "original_name": "STEINS;GATE",
                       "first_air_date": "2011-04-06",
+                      "genre_ids": [16, 10765],
                       "poster_path": "/poster.jpg",
                       "backdrop_path": "/backdrop.jpg",
                       "popularity": 42.0
@@ -286,6 +322,7 @@ public sealed class ProviderContractTests
         Assert.Equal("42509", candidate.Id.Value);
         Assert.Equal(MetadataSubjectKind.Series, candidate.Id.Kind);
         Assert.Equal(2011, candidate.Year);
+        Assert.Equal(MetadataContentKind.Animation, candidate.ContentKind);
     }
 
     [Fact]
@@ -305,6 +342,10 @@ public sealed class ProviderContractTests
                   "release_date": "2001-07-20",
                   "poster_path": "/poster.jpg",
                   "backdrop_path": "/backdrop.jpg",
+                  "genres": [
+                    { "id": 16, "name": "Animation" },
+                    { "id": 14, "name": "Fantasy" }
+                  ],
                   "external_ids": {
                     "imdb_id": "tt0245429"
                   }
@@ -324,6 +365,7 @@ public sealed class ProviderContractTests
         Assert.Equal("千与千寻", subject.Titles.Primary);
         Assert.Equal("tt0245429", subject.ExternalIds["imdb"]);
         Assert.Contains("/poster.jpg", subject.Artwork.PosterUrl, StringComparison.Ordinal);
+        Assert.Equal(MetadataContentKind.Animation, subject.ContentKind);
     }
 
     private static HttpResponseMessage Json(string json) =>
