@@ -461,7 +461,13 @@ internal static class MetadataSearchRequestNormalizer
             titles.Add(fallback);
         }
 
-        if (request.Year is >= 1900 and <= 2039)
+        var noisyLibraryTitle =
+            titles.Count >= 3 ||
+            request.Titles.Any(static title =>
+                !string.IsNullOrWhiteSpace(title) &&
+                title.Any(static c => char.IsPunctuation(c)));
+
+        if (noisyLibraryTitle && request.Year is >= 1900 and <= 2039)
         {
             var year = request.Year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var yearBases = titles
