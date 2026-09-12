@@ -11,7 +11,7 @@ on:
       - "codex/metadata-runtime-0.2.9"
       - "codex/metadata-runtime-0.2.10"
       - "codex/metadata-runtime-0.2.11"
-      - "codex/metadata-runtime-0.2.13"
+      - "codex/metadata-runtime-0.2.12"
       - "codex/metadata-runtime-0.2.13"
   workflow_dispatch:
 
