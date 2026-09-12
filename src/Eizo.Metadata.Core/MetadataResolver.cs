@@ -87,7 +87,10 @@ public sealed class MetadataResolver
             request.SeasonNumber is > 1 &&
             best is not null &&
             best.Candidate.Id.Kind == MetadataSubjectKind.Series &&
-            MetadataMatchScorer.GetCandidateInstallment(best.Candidate) is null;
+            MetadataMatchScorer.GetCandidateInstallment(best.Candidate) is null &&
+            !MetadataMatchScorer.HasStrongNamedSeasonSemanticMatch(
+                request.Titles,
+                best.Candidate.Titles);
 
         var resolved = best is not null &&
                        best.Score >= _options.AutoResolveThreshold &&
@@ -787,6 +790,11 @@ internal static class MetadataMatchScorer
         MetadataTitles candidateTitles) =>
         BestFranchiseTitleScore(requestedTitles, candidateTitles);
 
+    internal static bool HasStrongNamedSeasonSemanticMatch(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles) =>
+        BestNamedSeasonSemanticScore(requestedTitles, candidateTitles) >= 0.88;
+
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
         MetadataSearchCandidate candidate)
@@ -805,6 +813,16 @@ internal static class MetadataMatchScorer
             request.SeasonNumber is > 1;
 
         var titleScore = BestTitleScore(request.Titles, candidate.Titles);
+        var namedSeasonSemanticScore = BestNamedSeasonSemanticScore(
+            request.Titles,
+            candidate.Titles);
+        if (namedSeasonSemanticScore >= 0.88)
+        {
+            titleScore = Math.Max(titleScore, namedSeasonSemanticScore);
+            structure = Math.Max(structure, 0.92);
+            strongInstallmentEvidence = true;
+            evidence.Add($"named-season-semantic={namedSeasonSemanticScore:0.000}");
+        }
         if (requestedInstallment is not null &&
             candidateInstallment == requestedInstallment)
         {
@@ -898,6 +916,75 @@ internal static class MetadataMatchScorer
                 {
                     return 1.0;
                 }
+            }
+        }
+
+        return best;
+    }
+
+    private static double BestNamedSeasonSemanticScore(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles)
+    {
+        var semanticTitles = requestedTitles
+            .Select(static title =>
+                MetadataSearchTitleNormalizer.TryExtractNamedSeasonSemanticTitle(
+                    title,
+                    out var semantic)
+                        ? semantic
+                        : null)
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (semanticTitles.Length == 0)
+        {
+            return 0.0;
+        }
+
+        var candidates = candidateTitles
+            .EnumerateAll()
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .ToArray();
+
+        var best = 0.0;
+        foreach (var semanticTitle in semanticTitles)
+        {
+            var semantic = NormalizeTitle(semanticTitle!);
+            if (semantic.Length < 2)
+            {
+                continue;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var normalizedCandidate = NormalizeTitle(candidate);
+                if (normalizedCandidate.Length == 0)
+                {
+                    continue;
+                }
+
+                double score;
+                if (string.Equals(
+                        semantic,
+                        normalizedCandidate,
+                        StringComparison.Ordinal))
+                {
+                    score = 1.0;
+                }
+                else if (semantic.Length >= 3 &&
+                         normalizedCandidate.Contains(
+                             semantic,
+                             StringComparison.Ordinal))
+                {
+                    score = 0.96;
+                }
+                else
+                {
+                    score = TitleSimilarity(semanticTitle!, candidate) * 0.94;
+                }
+
+                best = Math.Max(best, score);
             }
         }
 
@@ -1014,7 +1101,9 @@ internal static class MetadataMatchScorer
     {
         if (left.Length == 1 || right.Length == 1)
         {
-            return left[0] == right[0] ? 1.0 : 0.0;
+            return string.Equals(left, right, StringComparison.Ordinal)
+                ? 1.0
+                : 0.0;
         }
 
         var leftCounts = BuildBigrams(left);
