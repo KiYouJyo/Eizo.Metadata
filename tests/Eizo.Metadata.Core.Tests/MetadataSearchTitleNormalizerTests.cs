@@ -39,6 +39,45 @@ public sealed class MetadataSearchTitleNormalizerTests
         Assert.Contains(expectedVariant, request.Titles, StringComparer.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("第五季 黄金之风", "黄金之风")]
+    [InlineData("第六季 石之海", "石之海")]
+    [InlineData("Season 4 Diamond is Unbreakable", "Diamond is Unbreakable")]
+    public void FromRecognition_AddsNamedSeasonSemanticVariant(
+        string directoryTitle,
+        string expectedSemantic)
+    {
+        var recognition = CreateRecognition("JOJO的奇妙冒险") with
+        {
+            TitleCandidates =
+            [
+                new RecognitionTitleCandidate(
+                    "JOJO的奇妙冒险",
+                    0.94,
+                    "filename",
+                    true),
+                new RecognitionTitleCandidate(
+                    directoryTitle,
+                    0.78,
+                    "parent-directory",
+                    false),
+            ],
+        };
+
+        var request = MetadataSearchRequest.FromRecognition(
+            recognition,
+            "zh-CN");
+
+        Assert.Contains(
+            directoryTitle,
+            request.Titles,
+            StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(
+            expectedSemantic,
+            request.Titles,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void FromRecognition_PreservesSeasonNameWhenItIsPartOfTitle()
     {

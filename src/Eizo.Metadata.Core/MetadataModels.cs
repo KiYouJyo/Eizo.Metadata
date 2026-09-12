@@ -159,6 +159,11 @@ internal static class MetadataSearchTitleNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex NamedSeasonSemanticRegex = new(
+        @"^\s*(?:(?:S(?:EASON)?\s*0?(?<en>\d{1,2}))|(?<ord>\d{1,2})(?:ST|ND|RD|TH)\s+SEASON|第\s*(?<cn>[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3})\s*(?:季|期))\s*[:：._-]?\s*(?<title>.+?)\s*$",
+        Options,
+        Timeout);
+
     private static readonly Regex SeasonCoverageRangeRegex = new(
         @"(?<![\p{L}\p{N}])(?:S(?:EASON)?\s*0?\d{1,2}\s*(?:-|~|～|–|—|−|TO|THROUGH|至|到)\s*(?:S(?:EASON)?\s*)?0?\d{1,2}|第?\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*季\s*(?:-|~|～|–|—|−|TO|THROUGH|至|到)\s*第?\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*季)(?:\s*(?:全|全集|COMPLETE|ALL))?",
         Options,
@@ -214,6 +219,35 @@ internal static class MetadataSearchTitleNormalizer
             : null;
     }
 
+    internal static bool TryExtractNamedSeasonSemanticTitle(
+        string? value,
+        out string semanticTitle)
+    {
+        semanticTitle = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Normalize(NormalizationForm.FormKC).Trim();
+        if (SeasonCoverageRangeRegex.IsMatch(normalized))
+        {
+            return false;
+        }
+
+        var match = NamedSeasonSemanticRegex.Match(normalized);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        semanticTitle = match.Groups["title"].Value
+            .Trim(' ', '-', '–', '—', '−', '_', '.', ':', '：');
+
+        return semanticTitle.Length >= 2 &&
+               semanticTitle.Any(static c => char.IsLetterOrDigit(c));
+    }
+
     internal static bool IsSeasonCoverageRange(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -260,6 +294,12 @@ internal static class MetadataSearchTitleNormalizer
         normalized = ProviderIdSuffixRegex.Replace(normalized, string.Empty);
         normalized = LeadingLibraryOrdinalRegex.Replace(normalized, string.Empty);
         normalized = SeasonCoverageRangeRegex.Replace(normalized, " ");
+
+        if (TryExtractNamedSeasonSemanticTitle(normalized, out var namedSeasonTitle))
+        {
+            normalized = namedSeasonTitle;
+        }
+
         normalized = LeadingSeasonTokenRegex.Replace(normalized, string.Empty);
         normalized = TrailingYearRegex.Replace(normalized, string.Empty);
         normalized = MultiSeparatorRegex.Replace(normalized, " ");

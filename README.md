@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.12 scope
+## Runtime 0.2.13 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,16 +99,20 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.12 — relation-branch ranking pass.**
+**Metadata Runtime 0.2.13 — named-season and subject-span pass.**
 
-Metadata 0.2.12 builds on the 0.2.11 field fixes and handles provider relation graphs
-that expose more than one series sequel from the same subject. The resolver no longer
-requires every sequel step to be a single linked-list edge. Series candidates are ranked
-using franchise-title affinity, release chronology, installment continuity, and a
-conservative penalty for OVA/OAD/special side content. The best branch must clear both
-an absolute confidence floor and a 0.06 lead; near-ties still remain unresolved.
-Same-season Part.2 collapsing, raw-title normalization, long-running local partitions,
-and the 0.82 / 0.06 auto-resolution safety gates remain intact.
+Metadata 0.2.13 addresses libraries where a local season number is not the same thing as
+a provider subject number. Named season folders such as `第五季 黄金之风` now contribute
+the semantic title `黄金之风` as a provider-search and scoring signal, so a descriptive
+arc name can outweigh a mismatched Sxx file number without hard-coded franchise IDs.
+The resolver also supports a single local season spanning multiple provider subjects:
+when a resolved subject runs out of episodes, a conservative same-season sequel
+continuation can carry the remaining local episode number into the next provider subject
+with an explicit episode offset. Finally, single-character title similarity now requires
+actual equality instead of matching merely on the first character, preventing short
+false candidates such as `咒` from outranking `剧场版 咒术回战 0`. Existing 0.82 / 0.06
+gates, relation-branch ranking, season-range handling, and ambiguity safeguards remain
+unchanged.
 
 ## License
 

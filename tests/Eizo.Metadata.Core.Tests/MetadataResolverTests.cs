@@ -622,6 +622,138 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task Resolver_NamedSeasonSemanticBeatsMismatchedFilenameSeasonNumber()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                CandidateWithAliases(
+                    "diamond",
+                    "JOJO的奇妙冒险 不灭钻石",
+                    2016,
+                    MetadataSubjectKind.Series,
+                    0,
+                    ["JOJO Part 4"]),
+                Candidate(
+                    "golden",
+                    "JOJO的奇妙冒险 黄金之风",
+                    2018,
+                    MetadataSubjectKind.Series,
+                    1),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["JOJO的奇妙冒险", "第五季 黄金之风"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 4,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("golden", result.Best!.Candidate.Id.Value);
+        Assert.Contains(
+            result.Best.Evidence,
+            static value => value.StartsWith(
+                "named-season-semantic=",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Resolver_DoesNotTreatMatchingFirstCharacterAsExactShortTitle()
+    {
+        var provider = new FakeProvider(
+            "fake",
+            [
+                Candidate(
+                    "movie",
+                    "剧场版 咒术回战 0",
+                    2021,
+                    MetadataSubjectKind.Movie,
+                    0),
+                Candidate(
+                    "short",
+                    "咒",
+                    2022,
+                    MetadataSubjectKind.Movie,
+                    17),
+            ]);
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.ResolveAsync(
+            new MetadataSearchRequest(
+                ["咒术回战0", "咒术回战0 剧场版"],
+                2021,
+                MediaKind.Movie,
+                SeasonNumber: null,
+                EpisodeNumber: null,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsResolved);
+        Assert.Equal("movie", result.Best!.Candidate.Id.Value);
+        var shortCandidate = Assert.Single(
+            result.Candidates,
+            static item => item.Candidate.Id.Value == "short");
+        Assert.Contains(
+            shortCandidate.Evidence,
+            static value => value == "title=0.000");
+    }
+
+    [Theory]
+    [InlineData(25, 1)]
+    [InlineData(48, 24)]
+    public async Task EnrichAsync_ContinuesEpisodeAcrossSameLocalSeasonProviderSubjects(
+        int localEpisode,
+        int expectedProviderEpisode)
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("base", "JOJO的奇妙冒险", 2012, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["base"] = new("JOJO的奇妙冒险", 2012, 26, "stardust"),
+                ["stardust"] = new(
+                    "JOJO的奇妙冒险 星尘斗士",
+                    2014,
+                    24,
+                    "egypt"),
+                ["egypt"] = new(
+                    "JOJO的奇妙冒险 星尘斗士 埃及篇",
+                    2015,
+                    24,
+                    null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["JOJO的奇妙冒险", "第三季 星尘十字军"],
+                2012,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: localEpisode,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.NotNull(result.Subject);
+        Assert.Equal("egypt", result.Subject.Id.Value);
+        Assert.NotNull(result.Episode);
+        Assert.Equal(expectedProviderEpisode, result.Episode.EpisodeNumber);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value ==
+                "episode-subject-span=stardust>egypt");
+    }
+
+    [Fact]
     public async Task EnrichAsync_ResolvesNamedArcThroughUniqueSeriesSequelChain()
     {
         var provider = new RelationChainProvider(
@@ -1159,6 +1291,40 @@ public sealed class MetadataResolverTests
                     node.EpisodeCount,
                     new MetadataArtwork(null, null, null),
                     new Dictionary<string, string> { [Name] = id.Value }));
+        }
+
+        public override Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
+            MetadataProviderItemId id,
+            int? seasonNumber = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_nodes.TryGetValue(id.Value, out var node))
+            {
+                return Task.FromResult<IReadOnlyList<MetadataEpisode>>(
+                    Array.Empty<MetadataEpisode>());
+            }
+
+            return Task.FromResult<IReadOnlyList<MetadataEpisode>>(
+                Enumerable.Range(1, node.EpisodeCount)
+                    .Select(number =>
+                        new MetadataEpisode(
+                            $"{id.Value}-ep-{number}",
+                            new MetadataProviderItemId(
+                                Name,
+                                id.Value,
+                                MetadataSubjectKind.Series),
+                            1,
+                            number,
+                            MetadataEpisodeKind.Regular,
+                            new MetadataTitles(
+                                $"Episode {number}",
+                                null,
+                                new Dictionary<string, string>(),
+                                Array.Empty<string>()),
+                            null,
+                            null,
+                            null))
+                    .ToArray());
         }
 
         public Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(

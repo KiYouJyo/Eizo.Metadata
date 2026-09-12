@@ -87,7 +87,10 @@ public sealed class MetadataResolver
             request.SeasonNumber is > 1 &&
             best is not null &&
             best.Candidate.Id.Kind == MetadataSubjectKind.Series &&
-            MetadataMatchScorer.GetCandidateInstallment(best.Candidate) is null;
+            MetadataMatchScorer.GetCandidateInstallment(best.Candidate) is null &&
+            !MetadataMatchScorer.HasStrongNamedSeasonSemanticMatch(
+                request.Titles,
+                best.Candidate.Titles);
 
         var resolved = best is not null &&
                        best.Score >= _options.AutoResolveThreshold &&
@@ -314,6 +317,7 @@ public sealed class MetadataResolver
         }
 
         var id = resolution.Best.Candidate.Id;
+        var episodeRequest = request;
         provider ??= _providers.FirstOrDefault(item =>
             string.Equals(item.Name, id.Provider, StringComparison.OrdinalIgnoreCase));
 
@@ -345,18 +349,82 @@ public sealed class MetadataResolver
             return new MetadataEnrichmentResult(resolution, null, null, errors);
         }
 
+        if (subject is not null &&
+            id.Kind == MetadataSubjectKind.Series &&
+            request.EpisodeNumber is not null &&
+            provider is IMetadataRelationProvider episodeRelationProvider)
+        {
+            try
+            {
+                var continuation = await TryAdvanceEpisodeOverflowAsync(
+                        provider,
+                        episodeRelationProvider,
+                        subject,
+                        request.EpisodeNumber.Value,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (continuation is not null)
+                {
+                    subject = continuation.Subject;
+                    id = subject.Id;
+                    episodeRequest = request with
+                    {
+                        SeasonNumber = null,
+                        EpisodeNumber = continuation.EpisodeNumber,
+                    };
+
+                    var promotedBest = new MetadataResolutionCandidate(
+                        new MetadataSearchCandidate(
+                            subject.Id,
+                            subject.Titles,
+                            subject.ReleaseDate?.Year,
+                            resolution.Best.Candidate.ProviderRank),
+                        resolution.Best.Score,
+                        resolution.Best.Evidence
+                            .Concat(
+                            [
+                                $"episode-subject-span={continuation.Path}",
+                                $"episode-offset={request.EpisodeNumber.Value.ToString(CultureInfo.InvariantCulture)}->{continuation.EpisodeNumber.ToString(CultureInfo.InvariantCulture)}",
+                            ])
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray());
+
+                    resolution = resolution with
+                    {
+                        Best = promotedBest,
+                        Candidates = resolution.Candidates
+                            .Where(item => item.Candidate.Id != subject.Id)
+                            .Prepend(promotedBest)
+                            .ToArray(),
+                    };
+                }
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Episode overflow continuation is optional enrichment. If a
+                // relation/detail request fails, keep the resolved base subject
+                // and let episode lookup fall back to the original request.
+            }
+        }
+
         MetadataEpisode? episode = null;
         if (subject is not null &&
             id.Kind == MetadataSubjectKind.Series &&
-            request.EpisodeNumber is not null)
+            episodeRequest.EpisodeNumber is not null)
         {
             try
             {
                 var episodes = await provider
-                    .GetEpisodesAsync(id, request.SeasonNumber, cancellationToken)
+                    .GetEpisodesAsync(id, episodeRequest.SeasonNumber, cancellationToken)
                     .ConfigureAwait(false);
 
-                episode = SelectEpisode(request, episodes);
+                episode = SelectEpisode(episodeRequest, episodes);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -651,6 +719,151 @@ public sealed class MetadataResolver
                normalized.Equals("SEQUEL", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async Task<EpisodeSubjectContinuation?> TryAdvanceEpisodeOverflowAsync(
+        IMetadataProvider provider,
+        IMetadataRelationProvider relationProvider,
+        MetadataSubject initialSubject,
+        decimal localEpisodeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (initialSubject.EpisodeCount is not > 0 ||
+            localEpisodeNumber <= initialSubject.EpisodeCount.Value)
+        {
+            return null;
+        }
+
+        var current = initialSubject;
+        var remainingEpisode = localEpisodeNumber;
+        var visited = new HashSet<string>(StringComparer.Ordinal)
+        {
+            current.Id.Value,
+        };
+        var path = new List<string> { current.Id.Value };
+
+        for (var hop = 0; hop < 6; hop++)
+        {
+            if (current.EpisodeCount is not > 0 ||
+                remainingEpisode <= current.EpisodeCount.Value)
+            {
+                break;
+            }
+
+            remainingEpisode -= current.EpisodeCount.Value;
+
+            var relations = await relationProvider
+                .GetRelatedSubjectsAsync(current.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            var continuationSubjects = new List<MetadataSubject>();
+            foreach (var relation in relations
+                         .Where(static relation =>
+                             IsSequelRelation(relation.Relation)))
+            {
+                if (visited.Contains(relation.SubjectId.Value))
+                {
+                    continue;
+                }
+
+                var related = await provider
+                    .GetSubjectAsync(relation.SubjectId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (related is { Id.Kind: MetadataSubjectKind.Series } &&
+                    IsSameLocalSeasonContinuation(current, related))
+                {
+                    continuationSubjects.Add(related);
+                }
+            }
+
+            var candidates = continuationSubjects
+                .GroupBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+                .Select(static group => group.First())
+                .Where(subject =>
+                    subject.ReleaseDate is null ||
+                    current.ReleaseDate is null ||
+                    subject.ReleaseDate.Value >= current.ReleaseDate.Value.AddDays(-31))
+                .OrderBy(static subject => subject.ReleaseDate)
+                .ThenBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+                .ToArray();
+
+            if (candidates.Length == 0)
+            {
+                return null;
+            }
+
+            var next = candidates[0];
+            if (candidates.Length > 1 &&
+                candidates[0].ReleaseDate == candidates[1].ReleaseDate)
+            {
+                return null;
+            }
+
+            current = next;
+            visited.Add(current.Id.Value);
+            path.Add(current.Id.Value);
+        }
+
+        if (current.Id == initialSubject.Id ||
+            current.EpisodeCount is not > 0 ||
+            remainingEpisode <= 0 ||
+            remainingEpisode > current.EpisodeCount.Value)
+        {
+            return null;
+        }
+
+        return new EpisodeSubjectContinuation(
+            current,
+            remainingEpisode,
+            string.Join(">", path));
+    }
+
+    private static bool IsSameLocalSeasonContinuation(
+        MetadataSubject current,
+        MetadataSubject next)
+    {
+        var currentInstallment = MetadataMatchScorer.GetTitleInstallment(
+            current.Titles);
+        var nextInstallment = MetadataMatchScorer.GetTitleInstallment(
+            next.Titles);
+
+        if (currentInstallment is not null &&
+            nextInstallment == currentInstallment)
+        {
+            return true;
+        }
+
+        var currentTitles = current.Titles
+            .EnumerateAll()
+            .Select(MetadataMatchScorer.NormalizeTitleForComparison)
+            .Where(static value => value.Length >= 4)
+            .ToArray();
+        var nextTitles = next.Titles
+            .EnumerateAll()
+            .Select(MetadataMatchScorer.NormalizeTitleForComparison)
+            .Where(static value => value.Length >= 4)
+            .ToArray();
+
+        foreach (var left in currentTitles)
+        {
+            foreach (var right in nextTitles)
+            {
+                if (left.Contains(right, StringComparison.Ordinal) ||
+                    right.Contains(left, StringComparison.Ordinal))
+                {
+                    var ratio =
+                        (double)Math.Min(left.Length, right.Length) /
+                        Math.Max(left.Length, right.Length);
+                    if (ratio >= 0.72)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static MetadataEpisode? SelectEpisode(
         MetadataSearchRequest request,
         IReadOnlyList<MetadataEpisode> episodes)
@@ -704,6 +917,11 @@ public sealed class MetadataResolver
                     exception.Message));
         }
     }
+
+    private sealed record EpisodeSubjectContinuation(
+        MetadataSubject Subject,
+        decimal EpisodeNumber,
+        string Path);
 
     private sealed record RelationChainResult(
         MetadataSubject Subject,
@@ -787,6 +1005,14 @@ internal static class MetadataMatchScorer
         MetadataTitles candidateTitles) =>
         BestFranchiseTitleScore(requestedTitles, candidateTitles);
 
+    internal static bool HasStrongNamedSeasonSemanticMatch(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles) =>
+        BestNamedSeasonSemanticScore(requestedTitles, candidateTitles) >= 0.88;
+
+    internal static string NormalizeTitleForComparison(string value) =>
+        NormalizeTitle(value);
+
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
         MetadataSearchCandidate candidate)
@@ -805,6 +1031,16 @@ internal static class MetadataMatchScorer
             request.SeasonNumber is > 1;
 
         var titleScore = BestTitleScore(request.Titles, candidate.Titles);
+        var namedSeasonSemanticScore = BestNamedSeasonSemanticScore(
+            request.Titles,
+            candidate.Titles);
+        if (namedSeasonSemanticScore >= 0.88)
+        {
+            titleScore = Math.Max(titleScore, namedSeasonSemanticScore);
+            structure = 1.0;
+            strongInstallmentEvidence = true;
+            evidence.Add($"named-season-semantic={namedSeasonSemanticScore:0.000}");
+        }
         if (requestedInstallment is not null &&
             candidateInstallment == requestedInstallment)
         {
@@ -898,6 +1134,75 @@ internal static class MetadataMatchScorer
                 {
                     return 1.0;
                 }
+            }
+        }
+
+        return best;
+    }
+
+    private static double BestNamedSeasonSemanticScore(
+        IReadOnlyList<string> requestedTitles,
+        MetadataTitles candidateTitles)
+    {
+        var semanticTitles = requestedTitles
+            .Select(static title =>
+                MetadataSearchTitleNormalizer.TryExtractNamedSeasonSemanticTitle(
+                    title,
+                    out var semantic)
+                        ? semantic
+                        : null)
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (semanticTitles.Length == 0)
+        {
+            return 0.0;
+        }
+
+        var candidates = candidateTitles
+            .EnumerateAll()
+            .Where(static title => !string.IsNullOrWhiteSpace(title))
+            .ToArray();
+
+        var best = 0.0;
+        foreach (var semanticTitle in semanticTitles)
+        {
+            var semantic = NormalizeTitle(semanticTitle!);
+            if (semantic.Length < 2)
+            {
+                continue;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var normalizedCandidate = NormalizeTitle(candidate);
+                if (normalizedCandidate.Length == 0)
+                {
+                    continue;
+                }
+
+                double score;
+                if (string.Equals(
+                        semantic,
+                        normalizedCandidate,
+                        StringComparison.Ordinal))
+                {
+                    score = 1.0;
+                }
+                else if (semantic.Length >= 3 &&
+                         normalizedCandidate.Contains(
+                             semantic,
+                             StringComparison.Ordinal))
+                {
+                    score = 1.0;
+                }
+                else
+                {
+                    score = TitleSimilarity(semanticTitle!, candidate) * 0.94;
+                }
+
+                best = Math.Max(best, score);
             }
         }
 
@@ -1014,7 +1319,9 @@ internal static class MetadataMatchScorer
     {
         if (left.Length == 1 || right.Length == 1)
         {
-            return left[0] == right[0] ? 1.0 : 0.0;
+            return string.Equals(left, right, StringComparison.Ordinal)
+                ? 1.0
+                : 0.0;
         }
 
         var leftCounts = BuildBigrams(left);
