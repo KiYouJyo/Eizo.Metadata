@@ -622,6 +622,99 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task EnrichAsync_ResolvesNamedArcThroughUniqueSeriesSequelChain()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("s1", "鬼灭之刃", 2019, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("鬼灭之刃", 2019, 26, "s2"),
+                ["s2"] = new("鬼灭之刃 无限列车篇", 2021, 7, "s3"),
+                ["s3"] = new("鬼灭之刃 游郭篇", 2021, 11, "s4"),
+                ["s4"] = new("鬼灭之刃 刀匠村篇", 2023, 11, "s5"),
+                ["s5"] = new("鬼灭之刃 柱训练篇", 2024, 8, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["鬼灭之刃"],
+                2019,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 5,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.NotNull(result.Subject);
+        Assert.Equal("s5", result.Subject.Id.Value);
+        Assert.Equal("鬼灭之刃 柱训练篇", result.Subject.Titles.Primary);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value == "relation-chain=season:5");
+        Assert.Contains(
+            result.Resolution.Best.Evidence,
+            static value => value == "relation-chain-path=s1>s2>s3>s4>s5");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_DoesNotPromoteAmbiguousSeriesSequelBranches()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("s1", "Example", 2020, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("Example", 2020, 12, null, ["s2a", "s2b"]),
+                ["s2a"] = new("Example Arc A", 2021, 12, null),
+                ["s2b"] = new("Example Arc B", 2021, 12, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["Example"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Resolution.IsResolved);
+        Assert.Null(result.Subject);
+    }
+
+    [Fact]
+    public async Task CachedProvider_CachesSubjectRelations()
+    {
+        var inner = new RelationChainProvider(
+            "fake",
+            [Candidate("s1", "Example", 2020, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("Example", 2020, 12, "s2"),
+                ["s2"] = new("Example Arc", 2021, 12, null),
+            });
+        var cached = new CachedMetadataProvider(inner, new MemoryMetadataCache());
+        var relationProvider = Assert.IsAssignableFrom<IMetadataRelationProvider>(cached);
+        var id = new MetadataProviderItemId("fake", "s1", MetadataSubjectKind.Series);
+
+        _ = await relationProvider.GetRelatedSubjectsAsync(
+            id,
+            TestContext.Current.CancellationToken);
+        _ = await relationProvider.GetRelatedSubjectsAsync(
+            id,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, inner.RelationCalls);
+    }
+
+    [Fact]
     public async Task Resolver_IsolatesProviderFailure()
     {
         var resolver = new MetadataResolver(
@@ -831,6 +924,89 @@ public sealed class MetadataResolverTests
                     _episodeCount,
                     new MetadataArtwork(null, null, null),
                     new Dictionary<string, string> { [id.Provider] = id.Value }));
+    }
+
+    private sealed record RelationNode(
+        string Title,
+        int Year,
+        int EpisodeCount,
+        string? Sequel,
+        IReadOnlyList<string>? Sequels = null);
+
+    private sealed class RelationChainProvider
+        : FakeProvider, IMetadataRelationProvider
+    {
+        private readonly IReadOnlyDictionary<string, RelationNode> _nodes;
+
+        public RelationChainProvider(
+            string name,
+            IReadOnlyList<MetadataSearchCandidate> candidates,
+            IReadOnlyDictionary<string, RelationNode> nodes)
+            : base(name, candidates)
+        {
+            _nodes = nodes;
+        }
+
+        public int RelationCalls { get; private set; }
+
+        public override Task<MetadataSubject?> GetSubjectAsync(
+            MetadataProviderItemId id,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_nodes.TryGetValue(id.Value, out var node))
+            {
+                return Task.FromResult<MetadataSubject?>(null);
+            }
+
+            return Task.FromResult<MetadataSubject?>(
+                new MetadataSubject(
+                    new MetadataProviderItemId(Name, id.Value, MetadataSubjectKind.Series),
+                    new MetadataTitles(
+                        node.Title,
+                        node.Title,
+                        new Dictionary<string, string>(),
+                        Array.Empty<string>()),
+                    null,
+                    new DateOnly(node.Year, 1, 1),
+                    node.EpisodeCount,
+                    new MetadataArtwork(null, null, null),
+                    new Dictionary<string, string> { [Name] = id.Value }));
+        }
+
+        public Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(
+            MetadataProviderItemId id,
+            CancellationToken cancellationToken = default)
+        {
+            RelationCalls++;
+
+            if (!_nodes.TryGetValue(id.Value, out var node))
+            {
+                return Task.FromResult<IReadOnlyList<MetadataSubjectRelation>>(
+                    Array.Empty<MetadataSubjectRelation>());
+            }
+
+            var sequelIds = node.Sequels ??
+                            (node.Sequel is null ? [] : [node.Sequel]);
+
+            return Task.FromResult<IReadOnlyList<MetadataSubjectRelation>>(
+                sequelIds
+                    .Select(sequelId =>
+                    {
+                        var sequel = _nodes[sequelId];
+                        return new MetadataSubjectRelation(
+                            new MetadataProviderItemId(
+                                Name,
+                                sequelId,
+                                MetadataSubjectKind.Unknown),
+                            "续集",
+                            new MetadataTitles(
+                                sequel.Title,
+                                sequel.Title,
+                                new Dictionary<string, string>(),
+                                Array.Empty<string>()));
+                    })
+                    .ToArray());
+        }
     }
 
     private sealed class EnrichmentProvider(
