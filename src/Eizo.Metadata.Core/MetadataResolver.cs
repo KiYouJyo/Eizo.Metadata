@@ -211,12 +211,107 @@ public sealed class MetadataResolver
         if (!resolution.IsResolved &&
             resolution.Best is not null &&
             request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
+            request.EpisodeNumber is > 0 &&
+            resolution.Best.Candidate.Id.Kind == MetadataSubjectKind.Series)
+        {
+            provider ??= _providers.FirstOrDefault(item =>
+                string.Equals(
+                    item.Name,
+                    resolution.Best.Candidate.Id.Provider,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (provider is IMetadataRelationProvider familyRelationProvider)
+            {
+                try
+                {
+                    var family = await TryResolveLocalSeasonSubjectFamilyAsync(
+                            provider,
+                            familyRelationProvider,
+                            request,
+                            resolution,
+                            _options,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (family is not null)
+                    {
+                        subject = family.Subject;
+
+                        var familyIds = family.SubjectIds
+                            .ToHashSet(StringComparer.Ordinal);
+                        var remainingCandidates = resolution.Candidates
+                            .Where(item => !familyIds.Contains(item.Candidate.Id.Value))
+                            .ToArray();
+                        var strongestCompetitor = remainingCandidates
+                            .FirstOrDefault()?.Score ?? 0.0;
+
+                        var promotedScore = Math.Min(
+                            1.0,
+                            Math.Max(
+                                Math.Max(
+                                    _options.AutoResolveThreshold + 0.02,
+                                    resolution.Best.Score),
+                                strongestCompetitor + _options.MinimumLead + 0.01));
+
+                        var existingTarget = resolution.Candidates
+                            .FirstOrDefault(item =>
+                                item.Candidate.Id == family.Subject.Id);
+                        var promotedCandidate = new MetadataResolutionCandidate(
+                            new MetadataSearchCandidate(
+                                family.Subject.Id,
+                                family.Subject.Titles,
+                                family.Subject.ReleaseDate?.Year,
+                                existingTarget?.Candidate.ProviderRank ??
+                                resolution.Best.Candidate.ProviderRank),
+                            promotedScore,
+                            (existingTarget?.Evidence ?? resolution.Best.Evidence)
+                                .Concat(
+                                [
+                                    $"local-season-subject-family={family.Path}",
+                                    $"local-season-family-range={family.Range}",
+                                    $"episode-offset={request.EpisodeNumber.Value.ToString(CultureInfo.InvariantCulture)}->{family.EpisodeNumber.ToString(CultureInfo.InvariantCulture)}",
+                                ])
+                                .Distinct(StringComparer.Ordinal)
+                                .ToArray());
+
+                        resolution = resolution with
+                        {
+                            Best = promotedCandidate,
+                            IsResolved = true,
+                            Confidence = promotedCandidate.Score,
+                            Candidates = remainingCandidates
+                                .Prepend(promotedCandidate)
+                                .ToArray(),
+                        };
+                    }
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Subject-family inference is conservative enrichment.
+                    // Any provider graph/detail failure leaves ordinary
+                    // resolution untouched.
+                    subject = null;
+                }
+            }
+        }
+
+        if (!resolution.IsResolved &&
+            resolution.Best is not null &&
+            request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
             request.SeasonNumber is > 1 &&
             resolution.Best.Candidate.Id.Kind == MetadataSubjectKind.Series &&
             resolution.Best.Score >= Math.Max(0.74, _options.AutoResolveThreshold - 0.06) &&
             MetadataMatchScorer.HasExactTitleMatch(
                 request.Titles,
-                resolution.Best.Candidate.Titles))
+                resolution.Best.Candidate.Titles) &&
+            !ShouldBlockRelationChainEntry(
+                request,
+                resolution.Best.Candidate))
         {
             provider ??= _providers.FirstOrDefault(item =>
                 string.Equals(
@@ -318,6 +413,29 @@ public sealed class MetadataResolver
 
         var id = resolution.Best.Candidate.Id;
         var episodeRequest = request;
+
+        if (subject is not null &&
+            resolution.Best.Evidence.Any(static value =>
+                value.StartsWith(
+                    "local-season-subject-family=",
+                    StringComparison.Ordinal)))
+        {
+            var offsetEvidence = resolution.Best.Evidence
+                .FirstOrDefault(static value =>
+                    value.StartsWith(
+                        "episode-offset=",
+                        StringComparison.Ordinal));
+
+            if (TryParseEpisodeOffset(offsetEvidence, out var mappedEpisode))
+            {
+                episodeRequest = request with
+                {
+                    SeasonNumber = null,
+                    EpisodeNumber = mappedEpisode,
+                };
+            }
+        }
+
         provider ??= _providers.FirstOrDefault(item =>
             string.Equals(item.Name, id.Provider, StringComparison.OrdinalIgnoreCase));
 
@@ -476,6 +594,212 @@ public sealed class MetadataResolver
             : resolution.Best.Score - second.Score;
 
         return lead >= _options.MinimumLead;
+    }
+
+    private static bool ShouldBlockRelationChainEntry(
+        MetadataSearchRequest request,
+        MetadataSearchCandidate candidate)
+    {
+        if (request.SeasonNumber is not > 0)
+        {
+            return false;
+        }
+
+        var candidateInstallment = MetadataMatchScorer.GetCandidateInstallment(
+            candidate);
+        if (candidateInstallment == request.SeasonNumber)
+        {
+            return true;
+        }
+
+        return MetadataMatchScorer.HasStrongNamedSeasonSemanticMatch(
+            request.Titles,
+            candidate.Titles);
+    }
+
+    private static async Task<LocalSeasonSubjectFamilyResult?> TryResolveLocalSeasonSubjectFamilyAsync(
+        IMetadataProvider provider,
+        IMetadataRelationProvider relationProvider,
+        MetadataSearchRequest request,
+        MetadataResolution resolution,
+        MetadataResolverOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (resolution.Best is null ||
+            request.EpisodeNumber is not > 0)
+        {
+            return null;
+        }
+
+        var best = resolution.Best;
+        var second = resolution.Candidates.Skip(1).FirstOrDefault();
+        if (second is null ||
+            best.Score < options.AutoResolveThreshold ||
+            best.Score - second.Score >= options.MinimumLead)
+        {
+            return null;
+        }
+
+        var providerName = best.Candidate.Id.Provider;
+        var scoreFloor = Math.Max(
+            options.AutoResolveThreshold,
+            best.Score - 0.08);
+
+        var seeds = resolution.Candidates
+            .Where(item =>
+                item.Candidate.Id.Kind == MetadataSubjectKind.Series &&
+                string.Equals(
+                    item.Candidate.Id.Provider,
+                    providerName,
+                    StringComparison.OrdinalIgnoreCase) &&
+                item.Score >= scoreFloor)
+            .Take(6)
+            .ToArray();
+
+        if (seeds.Length < 2)
+        {
+            return null;
+        }
+
+        var subjects = new Dictionary<string, MetadataSubject>(
+            StringComparer.Ordinal);
+        foreach (var seed in seeds)
+        {
+            var detail = await provider
+                .GetSubjectAsync(seed.Candidate.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (detail is
+                {
+                    Id.Kind: MetadataSubjectKind.Series,
+                    EpisodeCount: > 0,
+                })
+            {
+                subjects[detail.Id.Value] = detail;
+            }
+        }
+
+        if (subjects.Count < 2)
+        {
+            return null;
+        }
+
+        var seedIds = subjects.Keys.ToHashSet(StringComparer.Ordinal);
+        var outgoing = new Dictionary<string, string>(StringComparer.Ordinal);
+        var incoming = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var subject in subjects.Values)
+        {
+            var relations = await relationProvider
+                .GetRelatedSubjectsAsync(subject.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            var nextIds = relations
+                .Where(static relation => IsSequelRelation(relation.Relation))
+                .Select(static relation => relation.SubjectId.Value)
+                .Where(seedIds.Contains)
+                .Distinct(StringComparer.Ordinal)
+                .Where(nextId =>
+                    subjects.TryGetValue(nextId, out var nextSubject) &&
+                    IsSameLocalSeasonContinuation(subject, nextSubject))
+                .ToArray();
+
+            if (nextIds.Length > 1)
+            {
+                return null;
+            }
+
+            if (nextIds.Length == 1)
+            {
+                outgoing[subject.Id.Value] = nextIds[0];
+                incoming.TryGetValue(nextIds[0], out var count);
+                incoming[nextIds[0]] = count + 1;
+            }
+        }
+
+        var starts = subjects.Values
+            .Where(subject =>
+                !incoming.TryGetValue(subject.Id.Value, out var count) ||
+                count == 0)
+            .OrderBy(static subject => subject.ReleaseDate)
+            .ThenBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        if (starts.Length != 1)
+        {
+            return null;
+        }
+
+        var chain = new List<MetadataSubject>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var current = starts[0];
+
+        while (visited.Add(current.Id.Value))
+        {
+            chain.Add(current);
+            if (!outgoing.TryGetValue(current.Id.Value, out var nextId) ||
+                !subjects.TryGetValue(nextId, out var next))
+            {
+                break;
+            }
+
+            current = next;
+        }
+
+        if (chain.Count < 2 ||
+            chain.Count != subjects.Count)
+        {
+            return null;
+        }
+
+        var localEpisode = request.EpisodeNumber.Value;
+        decimal consumed = 0;
+
+        foreach (var member in chain)
+        {
+            var count = member.EpisodeCount!.Value;
+            var end = consumed + count;
+            if (localEpisode <= end)
+            {
+                var mapped = localEpisode - consumed;
+                return new LocalSeasonSubjectFamilyResult(
+                    member,
+                    mapped,
+                    chain.Select(static item => item.Id.Value).ToArray(),
+                    string.Join(">", chain.Select(static item => item.Id.Value)),
+                    $"{consumed + 1:0.###}-{end:0.###}:{member.Id.Value}");
+            }
+
+            consumed = end;
+        }
+
+        return null;
+    }
+
+    private static bool TryParseEpisodeOffset(
+        string? evidence,
+        out decimal mappedEpisode)
+    {
+        mappedEpisode = 0;
+        if (string.IsNullOrWhiteSpace(evidence) ||
+            !evidence.StartsWith(
+                "episode-offset=",
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var arrow = evidence.IndexOf("->", StringComparison.Ordinal);
+        if (arrow < 0)
+        {
+            return false;
+        }
+
+        return decimal.TryParse(
+            evidence[(arrow + 2)..],
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture,
+            out mappedEpisode) &&
+            mappedEpisode > 0;
     }
 
     private static async Task<RelationChainResult?> TryResolveSeasonByRelationChainAsync(
@@ -921,6 +1245,13 @@ public sealed class MetadataResolver
                     exception.Message));
         }
     }
+
+    private sealed record LocalSeasonSubjectFamilyResult(
+        MetadataSubject Subject,
+        decimal EpisodeNumber,
+        IReadOnlyList<string> SubjectIds,
+        string Path,
+        string Range);
 
     private sealed record EpisodeSubjectContinuation(
         MetadataSubject Subject,
