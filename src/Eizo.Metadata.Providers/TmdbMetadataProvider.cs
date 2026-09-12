@@ -186,7 +186,10 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
                 BuildImageUrl(root.GetString("poster_path")),
                 BuildImageUrl(root.GetString("backdrop_path")),
                 BuildImageUrl(root.GetString("poster_path"))),
-            externalIds);
+            externalIds)
+        {
+            ContentKind = MapContentKind(root),
+        };
     }
 
     public async Task<IReadOnlyList<MetadataEpisode>> GetEpisodesAsync(
@@ -315,7 +318,62 @@ public sealed class TmdbMetadataProvider : IMetadataProvider
                 ? item.GetYear("release_date")
                 : item.GetYear("first_air_date"),
             rank,
-            item.GetDouble("popularity"));
+            item.GetDouble("popularity"))
+        {
+            ContentKind = MapContentKind(item),
+        };
+
+    private static MetadataContentKind MapContentKind(JsonElement item)
+    {
+        if (item.TryGetProperty("genre_ids", out var genreIds) &&
+            genreIds.ValueKind == JsonValueKind.Array)
+        {
+            var ids = genreIds
+                .EnumerateArray()
+                .Select(static value =>
+                    value.ValueKind == JsonValueKind.Number &&
+                    value.TryGetInt32(out var id)
+                        ? id
+                        : (int?)null)
+                .Where(static value => value is not null)
+                .Select(static value => value!.Value)
+                .ToArray();
+
+            if (ids.Contains(16))
+            {
+                return MetadataContentKind.Animation;
+            }
+
+            return ids.Length > 0
+                ? MetadataContentKind.LiveAction
+                : MetadataContentKind.Unknown;
+        }
+
+        if (item.TryGetProperty("genres", out var genres) &&
+            genres.ValueKind == JsonValueKind.Array)
+        {
+            var hasGenre = false;
+            foreach (var genre in genres.EnumerateArray())
+            {
+                hasGenre = true;
+                if (genre.GetInt32("id") == 16 ||
+                    string.Equals(
+                        genre.GetString("name"),
+                        "Animation",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return MetadataContentKind.Animation;
+                }
+            }
+
+            if (hasGenre)
+            {
+                return MetadataContentKind.LiveAction;
+            }
+        }
+
+        return MetadataContentKind.Unknown;
+    }
 
     private static MetadataTitles MapTitles(JsonElement item, MetadataSubjectKind kind)
     {

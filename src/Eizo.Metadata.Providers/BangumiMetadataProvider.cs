@@ -271,7 +271,10 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             date,
             episodeCount,
             new MetadataArtwork(poster, BackdropUrl: null, thumbnail),
-            externalIds);
+            externalIds)
+        {
+            ContentKind = MapContentKind(root),
+        };
     }
 
     public async Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(
@@ -430,7 +433,10 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             item.TryGetProperty("rating", out var rating) &&
             rating.ValueKind == JsonValueKind.Object
                 ? rating.GetDouble("score")
-                : null);
+                : null)
+        {
+            ContentKind = MapContentKind(item),
+        };
 
     private static MetadataTitles MapTitles(JsonElement item)
     {
@@ -769,6 +775,14 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
 
         return index == shorter.Length;
     }
+
+    private static MetadataContentKind MapContentKind(JsonElement item) =>
+        item.GetInt32("type") switch
+        {
+            2 => MetadataContentKind.Animation,
+            6 => MetadataContentKind.LiveAction,
+            _ => MetadataContentKind.Unknown,
+        };
 
     private static MetadataSubjectKind MapKind(JsonElement item)
     {
