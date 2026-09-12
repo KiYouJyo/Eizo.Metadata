@@ -469,7 +469,7 @@ public sealed class MetadataResolver
 
         if (subject is not null &&
             id.Kind == MetadataSubjectKind.Series &&
-            request.EpisodeNumber is not null &&
+            episodeRequest.EpisodeNumber is not null &&
             provider is IMetadataRelationProvider episodeRelationProvider)
         {
             try
@@ -478,7 +478,7 @@ public sealed class MetadataResolver
                         provider,
                         episodeRelationProvider,
                         subject,
-                        request.EpisodeNumber.Value,
+                        episodeRequest.EpisodeNumber.Value,
                         cancellationToken)
                     .ConfigureAwait(false);
 
@@ -505,7 +505,7 @@ public sealed class MetadataResolver
                             .Concat(
                             [
                                 $"episode-subject-span={continuation.Path}",
-                                $"episode-offset={request.EpisodeNumber.Value.ToString(CultureInfo.InvariantCulture)}->{continuation.EpisodeNumber.ToString(CultureInfo.InvariantCulture)}",
+                                $"episode-offset={episodeRequest.EpisodeNumber.Value.ToString(CultureInfo.InvariantCulture)}->{continuation.EpisodeNumber.ToString(CultureInfo.InvariantCulture)}",
                             ])
                             .Distinct(StringComparer.Ordinal)
                             .ToArray());
