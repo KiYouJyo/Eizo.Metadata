@@ -753,6 +753,33 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task EnrichAsync_LeavesLocalSplitCourUnresolvedWithoutStructuralConfirmation()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("fz", "Fate/Zero", 2011, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["fz"] = new("Fate/Zero", 2011, 25, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["Fate/Zero"],
+                2011,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "ja",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Resolution.IsResolved);
+        Assert.Null(result.Subject);
+    }
+
+    [Fact]
     public async Task EnrichAsync_DoesNotPromoteAmbiguousSeriesSequelBranches()
     {
         var provider = new RelationChainProvider(
