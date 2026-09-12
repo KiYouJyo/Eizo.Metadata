@@ -232,8 +232,9 @@ public sealed class ProviderContractTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(2, relations.Count);
-        var sequel = Assert.Single(relations.Where(static item =>
-            item.Relation == "续集"));
+        var sequel = Assert.Single(
+            relations,
+            static item => item.Relation == "续集");
         Assert.Equal("350764", sequel.SubjectId.Value);
         Assert.Equal("鬼灭之刃 无限列车篇", sequel.Titles.Primary);
     }
