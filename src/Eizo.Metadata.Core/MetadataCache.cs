@@ -160,7 +160,7 @@ public sealed class FileMetadataCache : IMetadataCache
     private sealed record CacheEnvelope(string Payload, DateTimeOffset ExpiresAt);
 }
 
-public sealed class CachedMetadataProvider : IMetadataProvider
+public sealed class CachedMetadataProvider : IMetadataProvider, IMetadataRelationProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IMetadataProvider _inner;
@@ -218,6 +218,33 @@ public sealed class CachedMetadataProvider : IMetadataProvider
                 .ConfigureAwait(false);
         }
 
+        return result;
+    }
+
+    public async Task<IReadOnlyList<MetadataSubjectRelation>> GetRelatedSubjectsAsync(
+        MetadataProviderItemId id,
+        CancellationToken cancellationToken = default)
+    {
+        if (_inner is not IMetadataRelationProvider relationProvider)
+        {
+            return Array.Empty<MetadataSubjectRelation>();
+        }
+
+        var key = $"relations|{Name}|{id.Value}";
+        var cached = await TryReadAsync<MetadataSubjectRelation[]>(key, cancellationToken)
+            .ConfigureAwait(false);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        var result = (await relationProvider
+            .GetRelatedSubjectsAsync(id, cancellationToken)
+            .ConfigureAwait(false))
+            .ToArray();
+
+        await WriteAsync(key, result, _policy.SubjectTtl, cancellationToken)
+            .ConfigureAwait(false);
         return result;
     }
 
