@@ -751,6 +751,14 @@ public sealed class MetadataResolverTests
             result.Resolution.Best!.Evidence,
             static value => value ==
                 "episode-subject-span=stardust>egypt");
+
+        var second = result.Resolution.Candidates.Skip(1).FirstOrDefault();
+        Assert.True(
+            second is null ||
+            result.Resolution.Best.Score - second.Score >= 0.06);
+        Assert.DoesNotContain(
+            result.Resolution.Candidates,
+            static item => item.Candidate.Id.Value == "stardust");
     }
 
     [Fact]
