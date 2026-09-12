@@ -188,6 +188,57 @@ public sealed class ProviderContractTests
     }
 
     [Fact]
+    public async Task Bangumi_GetRelatedSubjectsMapsSequelRelation()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Contains(
+                "/v0/subjects/245665/subjects",
+                request.RequestUri!.AbsolutePath,
+                StringComparison.Ordinal);
+
+            return Json("""
+                [
+                  {
+                    "id": 350764,
+                    "type": 2,
+                    "name": "鬼滅の刃 無限列車編",
+                    "name_cn": "鬼灭之刃 无限列车篇",
+                    "relation": "续集"
+                  },
+                  {
+                    "id": 291494,
+                    "type": 2,
+                    "name": "劇場版 鬼滅の刃 無限列車編",
+                    "name_cn": "剧场版 鬼灭之刃 无限列车篇",
+                    "relation": "不同演绎"
+                  }
+                ]
+                """);
+        });
+
+        var provider = new BangumiMetadataProvider(
+            new HttpClient(handler),
+            new BangumiMetadataProviderOptions(
+                "KiYouJyo/Eizo/0.3.9 (https://github.com/KiYouJyo/Eizo)",
+                SearchAliasEnrichmentLimit: 0));
+
+        var relations = await provider.GetRelatedSubjectsAsync(
+            new MetadataProviderItemId(
+                "bangumi",
+                "245665",
+                MetadataSubjectKind.Series),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, relations.Count);
+        var sequel = Assert.Single(relations.Where(static item =>
+            item.Relation == "续集"));
+        Assert.Equal("350764", sequel.SubjectId.Value);
+        Assert.Equal("鬼灭之刃 无限列车篇", sequel.Titles.Primary);
+    }
+
+    [Fact]
     public async Task Tmdb_SearchUsesBearerTokenAndMapsTvCandidate()
     {
         var handler = new RecordingHandler(request =>
