@@ -18,6 +18,38 @@ public sealed class ShadowComparisonSmokeTests
     }
 
     [Fact]
+    public void InputReader_ReadsLogicalPathFromQuotedEizoCsv()
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"eizo-shadow-{Guid.NewGuid():N}.csv");
+
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                NeedsReview,OriginalName,LogicalPath,MetadataStatus
+                false,"Show, Episode 1.mkv","Anime/Show, The/Show - 01.mkv",Resolved
+                false,Episode2.mkv,Anime/Show/Show - 02.mkv,Unresolved
+                """);
+
+            var paths = ShadowInputReader.ReadPaths(path);
+
+            Assert.Equal(
+                [
+                    "Anime/Show, The/Show - 01.mkv",
+                    "Anime/Show/Show - 02.mkv",
+                ],
+                paths);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void CompareTogether_PreservesInputCardinality()
     {
         var engine = new ShadowComparisonEngine();
