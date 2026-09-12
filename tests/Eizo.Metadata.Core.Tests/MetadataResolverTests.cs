@@ -658,6 +658,125 @@ public sealed class MetadataResolverTests
         Assert.Contains(
             result.Resolution.Best.Evidence,
             static value => value == "relation-chain-path=s1>s2>s3>s4>s5");
+        Assert.Contains(
+            result.Resolution.Best.Evidence,
+            static value => value == "relation-chain-season-map=1:s1>2:s2>3:s3>4:s4>5:s5");
+
+        var second = result.Resolution.Candidates.Skip(1).FirstOrDefault();
+        Assert.True(
+            second is null ||
+            result.Resolution.Best.Score - second.Score >= 0.06);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_NormalizesRawFieldTitleBeforeRelationProbe()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [
+                CandidateWithAliases(
+                    "s1",
+                    "鬼灭之刃",
+                    2019,
+                    MetadataSubjectKind.Series,
+                    0,
+                    ["Demon Slayer: Kimetsu no Yaiba"]),
+            ],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("鬼灭之刃", 2019, 26, "s2"),
+                ["s2"] = new("鬼灭之刃 无限列车篇", 2021, 7, "s3"),
+                ["s3"] = new("鬼灭之刃 游郭篇", 2021, 11, "s4"),
+                ["s4"] = new("鬼灭之刃 刀匠村篇", 2023, 11, "s5"),
+                ["s5"] = new("鬼灭之刃 柱训练篇", 2024, 8, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                [
+                    "Demon Slayer： Kimetsu no Yaiba.2019",
+                    "鬼灭之刃 S00-S05全 4K超分",
+                ],
+                2019,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 5,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("s5", result.Subject!.Id.Value);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value == "relation-chain=season:5");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_DoesNotCountSameSeasonPartAsAnotherLocalSeason()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("a1", "进击的巨人", 2013, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["a1"] = new("进击的巨人", 2013, 25, "a2"),
+                ["a2"] = new("进击的巨人 第二季", 2017, 12, "a3"),
+                ["a3"] = new("进击的巨人 第三季", 2018, 12, "a3p2"),
+                ["a3p2"] = new("进击的巨人 第三季 Part.2", 2019, 10, "a4"),
+                ["a4"] = new("进击的巨人 The Final Season", 2020, 16, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["进击的巨人"],
+                2013,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 4,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("a4", result.Subject!.Id.Value);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value ==
+                "relation-chain-path=a1>a2>a3>a3p2>a4");
+        Assert.Contains(
+            result.Resolution.Best.Evidence,
+            static value => value ==
+                "relation-chain-season-map=1:a1>2:a2>3:a3>3:a3p2>4:a4");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_LeavesLocalSplitCourUnresolvedWithoutStructuralConfirmation()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("fz", "Fate/Zero", 2011, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["fz"] = new("Fate/Zero", 2011, 25, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["Fate/Zero"],
+                2011,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "ja",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Resolution.IsResolved);
+        Assert.Null(result.Subject);
     }
 
     [Fact]

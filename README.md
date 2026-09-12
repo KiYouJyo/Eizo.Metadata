@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.10 scope
+## Runtime 0.2.11 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,17 +99,18 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.10 — relation-aware sequel pass.**
+**Metadata Runtime 0.2.11 — field-corrected relation-chain pass.**
 
-Metadata 0.2.10 builds on the 0.2.9 season-range fix and addresses franchises whose
-provider subjects use named arcs instead of numeric seasons. Providers may expose an
-optional related-subject graph; Bangumi uses the public v0 subject-relations endpoint.
-When ordinary scoring remains unresolved for an exact base title and Recognition has
-Season 2+, the resolver follows only a unique series-level sequel edge at each step.
-A unique chain can therefore map local seasons to named arcs without hard-coded franchise
-tables. Ambiguous sequel branches, provider failures, movies, and non-series relations
-remain unresolved. The existing 0.82 / 0.06 safety gates and long-running-series local
-partition behavior are preserved.
+Metadata 0.2.11 fixes three issues exposed by the first 0.2.10 full-library report.
+Follow-up structural probes now use the same normalized title variants as ordinary
+provider scoring, allowing raw bilingual filenames such as `Demon Slayer： Kimetsu no Yaiba.2019`
+to reach Bangumi's exact alias match. Relation traversal now distinguishes provider
+subject boundaries from local seasons: adjacent sequel subjects carrying the same explicit
+season number (for example `第三季` -> `第三季 Part.2`) stay in one logical season.
+Finally, relation-confirmed candidates are promoted with enough lead to satisfy the
+configured MinimumLead, so diagnostics no longer report `Resolved` together with
+`InsufficientLead`. Ambiguous branches and unsupported local split-cour partitions
+remain unresolved rather than being forced onto the wrong subject.
 
 ## License
 

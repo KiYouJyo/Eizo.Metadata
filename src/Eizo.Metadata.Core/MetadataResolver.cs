@@ -127,6 +127,12 @@ public sealed class MetadataResolver
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // Keep follow-up structural probes on the same normalized title set
+        // used by ResolveAsync. This matters for raw filenames such as
+        // "Demon Slayer： Kimetsu no Yaiba.2019", whose provider alias only
+        // becomes an exact match after conservative normalization.
+        request = MetadataSearchRequestNormalizer.Normalize(request);
+
         var resolution = await ResolveAsync(request, cancellationToken).ConfigureAwait(false);
         var errors = resolution.ProviderErrors.ToList();
 
@@ -230,27 +236,47 @@ public sealed class MetadataResolver
                     if (relationResult is not null)
                     {
                         subject = relationResult.Subject;
-                        var promotedScore = Math.Max(
-                            _options.AutoResolveThreshold + 0.02,
-                            resolution.Best.Score);
+
+                        var existingTarget = resolution.Candidates
+                            .FirstOrDefault(item => item.Candidate.Id == subject.Id);
+                        var remainingCandidates = resolution.Candidates
+                            .Where(item => item.Candidate.Id != subject.Id)
+                            .ToArray();
+                        var strongestCompetitor = remainingCandidates
+                            .FirstOrDefault()?.Score ?? 0.0;
+
+                        // A unique provider relation chain is the structural
+                        // confirmation that ordinary scoring was missing.
+                        // Reflect that in the score as well so downstream
+                        // diagnostics do not report "Resolved" together with
+                        // "InsufficientLead".
+                        var promotedScore = Math.Min(
+                            1.0,
+                            Math.Max(
+                                Math.Max(
+                                    _options.AutoResolveThreshold + 0.02,
+                                    resolution.Best.Score),
+                                strongestCompetitor + _options.MinimumLead + 0.01));
 
                         var promotedCandidate = new MetadataResolutionCandidate(
                             new MetadataSearchCandidate(
                                 subject.Id,
                                 subject.Titles,
                                 subject.ReleaseDate?.Year,
+                                existingTarget?.Candidate.ProviderRank ??
                                 resolution.Best.Candidate.ProviderRank),
-                            Math.Min(1.0, promotedScore),
-                            resolution.Best.Evidence
+                            promotedScore,
+                            (existingTarget?.Evidence ?? resolution.Best.Evidence)
                                 .Concat(
                                 [
                                     $"relation-chain=season:{request.SeasonNumber.Value}",
                                     $"relation-chain-path={relationResult.Path}",
+                                    $"relation-chain-season-map={relationResult.SeasonMap}",
                                 ])
+                                .Distinct(StringComparer.Ordinal)
                                 .ToArray());
 
-                        var candidates = resolution.Candidates
-                            .Where(item => item.Candidate.Id != subject.Id)
+                        var candidates = remainingCandidates
                             .Prepend(promotedCandidate)
                             .ToArray();
 
@@ -403,9 +429,15 @@ public sealed class MetadataResolver
             return null;
         }
 
+        var logicalSeason = 1;
         var path = new List<string> { current.Id.Value };
+        var seasonMap = new List<string> { $"1:{current.Id.Value}" };
 
-        for (var season = 2; season <= targetSeason; season++)
+        // Relation graphs can contain cour/part continuations that are distinct
+        // provider subjects but still belong to the same local season. Allow
+        // extra hops while retaining a hard bound and cycle protection.
+        var maxHops = Math.Max(targetSeason * 3, targetSeason + 4);
+        for (var hop = 0; hop < maxHops && logicalSeason < targetSeason; hop++)
         {
             var relations = await relationProvider
                 .GetRelatedSubjectsAsync(current.Id, cancellationToken)
@@ -443,14 +475,39 @@ public sealed class MetadataResolver
                 return null;
             }
 
-            current = distinctSeries[0];
+            var next = distinctSeries[0];
+            var currentInstallment = MetadataMatchScorer.GetTitleInstallment(
+                current.Titles);
+            var nextInstallment = MetadataMatchScorer.GetTitleInstallment(
+                next.Titles);
+
+            // Example: Attack on Titan "第三季" -> "第三季 Part.2" is a
+            // new provider subject but not a new local Season. When both
+            // adjacent subjects explicitly carry the same installment number,
+            // keep the logical season unchanged. Named-arc chains (Demon
+            // Slayer, JOJO, Free!, etc.) naturally advance one season per hop.
+            if (currentInstallment is null ||
+                nextInstallment is null ||
+                currentInstallment != nextInstallment)
+            {
+                logicalSeason++;
+            }
+
+            current = next;
             visited.Add(current.Id.Value);
             path.Add(current.Id.Value);
+            seasonMap.Add($"{logicalSeason}:{current.Id.Value}");
+        }
+
+        if (logicalSeason != targetSeason)
+        {
+            return null;
         }
 
         return new RelationChainResult(
             current,
-            string.Join(">", path));
+            string.Join(">", path),
+            string.Join(">", seasonMap));
     }
 
     private static bool IsSequelRelation(string value)
@@ -520,7 +577,8 @@ public sealed class MetadataResolver
 
     private sealed record RelationChainResult(
         MetadataSubject Subject,
-        string Path);
+        string Path,
+        string SeasonMap);
 
     private sealed record ProviderSearchOutcome(
         IReadOnlyList<MetadataSearchCandidate> Candidates,
@@ -583,6 +641,10 @@ internal static class MetadataMatchScorer
     internal static int? GetCandidateInstallment(
         MetadataSearchCandidate candidate) =>
         FindInstallment(candidate.Titles.EnumerateAll());
+
+    internal static int? GetTitleInstallment(
+        MetadataTitles titles) =>
+        FindInstallment(titles.EnumerateAll());
 
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
