@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.15 scope
+## Runtime 0.2.16 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,23 +99,29 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.15 — local-season subject-family pass.**
+**Metadata Runtime 0.2.16 — resolver closure pass.**
 
-Metadata 0.2.15 removes the remaining assumption that one local Season must equal one
-provider Subject. When several high-confidence unresolved Series candidates are linked
-by sequel relations and every adjacent subject is a conservative same-local-season
-continuation, the resolver builds an ordered Subject Family. The local episode number is
-then mapped through cumulative provider episode counts, allowing examples such as a
-24+24 split or multi-part 12+12+14 season to resolve without forcing the first subject to
-win the normal 0.06 lead on its own. The selected Subject is promoted with explicit
-`local-season-subject-family` and episode-offset evidence.
+Metadata 0.2.16 closes the remaining high-value resolver gaps found by the 6,067-file
+real-library report without expanding Recognition grammar or lowering the global
+0.82 / 0.06 auto-resolve gates.
 
-A relation-chain entry guard also prevents an already-structural current-season subject
-(for example a candidate explicitly matching `2nd GIG` for local Season 2, or a strong
-named-season semantic) from being treated as a Season-1 base and advanced one sequel too
-far. Existing 0.82 / 0.06 safety gates, named-season semantics, relation branch ranking,
-season-range handling, and ambiguity safeguards remain intact.
+The provider-search boundary now removes compact season coverage such as `1-2季`,
+emits conservative base-title / Part / bilingual / spaced-subtitle variants, and lets
+Bangumi search up to five strong query variants with a wider 50-subject recovery window.
+This is intended to recover canonical subjects that were previously absent from the
+candidate set for franchise-heavy or library-formatted titles.
 
+Resolver scoring now distinguishes an exact named-season title from derivative works
+that merely contain that season title, preventing one-episode compilations or OVAs from
+tying the canonical season. Two narrowly bounded promotions can close results within
+0.02 of the normal score threshold when either the requested installment matches
+structurally or an exceptionally strong title winner has a safe lead. Every promotion
+adds explicit evidence and promotes the diagnostic score, so downstream reports remain
+internally consistent.
+
+Local-season subject families, sequel-chain safety, ambiguity handling, and the existing
+single-subject local-split guard remain unchanged; unsafe cases stay unresolved rather
+than being forced.
 ## License
 
 A project license has not yet been declared.
