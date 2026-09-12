@@ -352,13 +352,13 @@ public sealed class MetadataResolver
         if (subject is not null &&
             id.Kind == MetadataSubjectKind.Series &&
             request.EpisodeNumber is not null &&
-            provider is IMetadataRelationProvider relationProvider)
+            provider is IMetadataRelationProvider episodeRelationProvider)
         {
             try
             {
                 var continuation = await TryAdvanceEpisodeOverflowAsync(
                         provider,
-                        relationProvider,
+                        episodeRelationProvider,
                         subject,
                         request.EpisodeNumber.Value,
                         cancellationToken)
