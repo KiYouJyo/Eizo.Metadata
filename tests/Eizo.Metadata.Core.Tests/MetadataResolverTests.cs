@@ -780,6 +780,75 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
+    public async Task EnrichAsync_SelectsNearestChronologicalSeriesFromMultipleSequelBranches()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("s1", "鬼灭之刃", 2019, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("鬼灭之刃", 2019, 26, "s2"),
+                ["s2"] = new(
+                    "鬼灭之刃 无限列车篇",
+                    2021,
+                    7,
+                    null,
+                    ["s3", "s4"]),
+                ["s3"] = new("鬼灭之刃 游郭篇", 2021, 11, null),
+                ["s4"] = new("鬼灭之刃 刀匠村篇", 2023, 11, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["鬼灭之刃"],
+                2019,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 3,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("s3", result.Subject!.Id.Value);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value.StartsWith(
+                "relation-chain-selection=",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task EnrichAsync_PenalizesSideContentWhenChoosingSequelBranch()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [Candidate("s1", "Example", 2020, MetadataSubjectKind.Series, 0)],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["s1"] = new("Example", 2020, 12, null, ["ova", "s2"]),
+                ["ova"] = new("Example OVA", 2021, 1, null),
+                ["s2"] = new("Example New Arc", 2021, 12, null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["Example"],
+                2020,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "en",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("s2", result.Subject!.Id.Value);
+    }
+
+    [Fact]
     public async Task EnrichAsync_DoesNotPromoteAmbiguousSeriesSequelBranches()
     {
         var provider = new RelationChainProvider(
