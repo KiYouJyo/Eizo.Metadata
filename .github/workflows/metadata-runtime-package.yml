@@ -8,7 +8,8 @@ on:
       - "codex/metadata-runtime-0.2.3"
       - "codex/metadata-runtime-0.2.4"
       - "codex/metadata-runtime-0.2.8"
-      - "codex/metadata-runtime-0.2.9"
+      - "codex/metadata-runtime-0.2.10"
+      - "codex/metadata-runtime-0.2.10"
   workflow_dispatch:
 
 permissions:
@@ -44,7 +45,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.9'
+          $version = '0.2.10'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -121,28 +122,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.9-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.10-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.9-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.10-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.9
+      - name: Publish Metadata runtime v0.2.10
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.9 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.9 already exists; leaving the published release immutable.'
+          if gh release view v0.2.10 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.10 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.9 \
+          gh release create v0.2.10 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.9" \
-            --notes "Season-range correctness release. v0.2.9 keeps the 0.82/0.06 gates while separating multi-season collection coverage from the current file season, prioritizing Recognition SxxEyy/Season directory evidence, and preserving explicit sequel-title overrides for generic Season 1." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.9-x64.zip" \
+            --title "Eizo.Metadata v0.2.10" \
+            --notes "Relation-aware sequel release. v0.2.10 preserves the season-range correctness fix and can resolve arc-named seasons through a unique provider sequel chain. Relation traversal is conservative: only one series sequel per step is accepted, ambiguous branches remain unresolved, and 0.82/0.06 gates remain unchanged." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.10-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
