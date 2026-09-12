@@ -1160,6 +1160,26 @@ public sealed class MetadataResolver
             return true;
         }
 
+        if (MetadataMatchScorer.HasPartContinuationMarker(current.Titles) ||
+            MetadataMatchScorer.HasPartContinuationMarker(next.Titles))
+        {
+            var currentPartBases = current.Titles
+                .EnumerateAll()
+                .Select(MetadataMatchScorer.NormalizePartFamilyTitle)
+                .Where(static value => value.Length >= 4)
+                .ToHashSet(StringComparer.Ordinal);
+            var nextPartBases = next.Titles
+                .EnumerateAll()
+                .Select(MetadataMatchScorer.NormalizePartFamilyTitle)
+                .Where(static value => value.Length >= 4)
+                .ToHashSet(StringComparer.Ordinal);
+
+            if (currentPartBases.Overlaps(nextPartBases))
+            {
+                return true;
+            }
+        }
+
         var currentTitles = current.Titles
             .EnumerateAll()
             .Select(MetadataMatchScorer.NormalizeTitleForComparison)
@@ -1291,6 +1311,11 @@ internal static class MetadataMatchScorer
         RegexOptionsValue,
         RegexTimeout);
 
+    private static readonly Regex PartContinuationRegex = new(
+        @"(?:^|[\s._-])PART\s*0?\d{1,2}(?=$|[\s._-])|第\s*[一二三四五六七八九十两兩〇零壹贰貳叁參肆伍陆陸柒捌玖拾\d]{1,3}\s*(?:部分|部)(?=$|[\s._-])",
+        RegexOptionsValue,
+        RegexTimeout);
+
     private static readonly Regex RomanSuffixRegex = new(
         @"(?:^|[\s._-])(?<roman>II|III|IV|V|VI|VII|VIII|IX|X|I)$",
         RegexOptionsValue,
@@ -1347,6 +1372,20 @@ internal static class MetadataMatchScorer
 
     internal static string NormalizeTitleForComparison(string value) =>
         NormalizeTitle(value);
+
+    internal static bool HasPartContinuationMarker(MetadataTitles titles) =>
+        titles.EnumerateAll().Any(static title =>
+            PartContinuationRegex.IsMatch(
+                title.Normalize(NormalizationForm.FormKC)));
+
+    internal static string NormalizePartFamilyTitle(string value)
+    {
+        var normalized = value
+            .Normalize(NormalizationForm.FormKC)
+            .ToUpperInvariant();
+        normalized = PartContinuationRegex.Replace(normalized, " ");
+        return NormalizeTitle(normalized);
+    }
 
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
