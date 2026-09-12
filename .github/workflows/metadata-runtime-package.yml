@@ -13,7 +13,8 @@ on:
       - "codex/metadata-runtime-0.2.11"
       - "codex/metadata-runtime-0.2.12"
       - "codex/metadata-runtime-0.2.13"
-      - "codex/metadata-runtime-0.2.14"
+      - "codex/metadata-runtime-0.2.15"
+      - "codex/metadata-runtime-0.2.15"
   workflow_dispatch:
 
 permissions:
@@ -49,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.14'
+          $version = '0.2.15'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -126,28 +127,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.14-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.15-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.14-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.15-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.14
+      - name: Publish Metadata runtime v0.2.15
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.14 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.14 already exists; leaving the published release immutable.'
+          if gh release view v0.2.15 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.15 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.14 \
+          gh release create v0.2.15 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.14" \
-            --notes "Subject-span diagnostics hotfix. v0.2.14 preserves all 0.2.13 matching behavior while removing the exhausted prior subject from the final candidate set after an episode crosses into a same-season provider continuation, keeping Resolved/lead diagnostics consistent." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.14-x64.zip" \
+            --title "Eizo.Metadata v0.2.15" \
+            --notes "Local-season subject-family release. v0.2.15 can resolve one local season across an ordered family of provider series subjects, map episodes by cumulative counts, and blocks sequel traversal when the current best already structurally represents the requested season." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.15-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
