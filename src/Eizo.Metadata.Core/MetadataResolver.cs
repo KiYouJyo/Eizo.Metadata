@@ -43,7 +43,12 @@ public sealed class MetadataResolver
                 IsResolved: false,
                 Confidence: 0.0,
                 Candidates: Array.Empty<MetadataResolutionCandidate>(),
-                ProviderErrors: Array.Empty<MetadataProviderError>());
+                ProviderErrors: Array.Empty<MetadataProviderError>())
+            {
+                FailureStage = MetadataFailureStage.Search,
+                FailureReason = MetadataFailureReason.MissingSearchTitles,
+                Lead = 0.0,
+            };
         }
 
         // Normalize at the resolver boundary so every host benefits, including
@@ -133,12 +138,46 @@ public sealed class MetadataResolver
                        lead >= _options.MinimumLead &&
                        !laterSeasonNeedsStructuralConfirmation;
 
+        var failureStage = MetadataFailureStage.None;
+        var failureReason = MetadataFailureReason.None;
+
+        if (!resolved)
+        {
+            if (best is null)
+            {
+                failureStage = MetadataFailureStage.Search;
+                failureReason = errors.Length > 0
+                    ? MetadataFailureReason.ProviderErrorNoCandidates
+                    : MetadataFailureReason.NoCandidates;
+            }
+            else if (best.Score < _options.AutoResolveThreshold)
+            {
+                failureStage = MetadataFailureStage.CandidateRanking;
+                failureReason = MetadataFailureReason.BelowAutoResolveThreshold;
+            }
+            else if (lead < _options.MinimumLead)
+            {
+                failureStage = MetadataFailureStage.CandidateRanking;
+                failureReason = MetadataFailureReason.InsufficientLead;
+            }
+            else if (laterSeasonNeedsStructuralConfirmation)
+            {
+                failureStage = MetadataFailureStage.InstallmentMapping;
+                failureReason = MetadataFailureReason.StructuralConfirmationRequired;
+            }
+        }
+
         return new MetadataResolution(
             best,
             resolved,
             best?.Score ?? 0.0,
             scored,
-            errors);
+            errors)
+        {
+            FailureStage = failureStage,
+            FailureReason = failureReason,
+            Lead = lead,
+        };
     }
 
     public async Task<MetadataSubject?> ResolveSubjectAsync(
@@ -225,6 +264,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedBest,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedScore,
                             Candidates = candidates,
                         };
@@ -314,6 +357,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedCandidate,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedCandidate.Score,
                             Candidates = remainingCandidates
                                 .Prepend(promotedCandidate)
@@ -420,6 +467,10 @@ public sealed class MetadataResolver
                         {
                             Best = promotedCandidate,
                             IsResolved = true,
+
+                            FailureStage = MetadataFailureStage.None,
+
+                            FailureReason = MetadataFailureReason.None,
                             Confidence = promotedCandidate.Score,
                             Candidates = candidates,
                         };
