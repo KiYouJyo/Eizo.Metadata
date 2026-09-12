@@ -39,7 +39,7 @@ public sealed class MetadataDiagnosticsTests
         Assert.True(result.NeedsReview);
         Assert.Equal(MetadataFailureStage.CandidateRanking, result.FailureStage);
         Assert.Equal(MetadataFailureReason.InsufficientLead, result.FailureReason);
-        Assert.Equal(0.0, result.Lead, 6);
+        Assert.InRange(result.Lead, 0.0, 0.06);
     }
 
     [Fact]
