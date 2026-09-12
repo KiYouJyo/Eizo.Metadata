@@ -1058,7 +1058,7 @@ public sealed class MetadataResolverTests
     }
 
     [Fact]
-    public async Task EnrichAsync_BlocksRelationChainWhenBestAlreadyMatchesRequestedInstallment()
+    public async Task EnrichAsync_DoesNotTraverseRelationChainWhenBestAlreadyMatchesRequestedInstallment()
     {
         var provider = new RelationChainProvider(
             "fake",
@@ -1107,8 +1107,9 @@ public sealed class MetadataResolverTests
                 Limit: 10),
             TestContext.Current.CancellationToken);
 
-        Assert.False(result.Resolution.IsResolved);
-        Assert.Null(result.Subject);
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal("gig", result.Resolution.Best!.Candidate.Id.Value);
+        Assert.Equal("gig", result.Subject!.Id.Value);
         Assert.DoesNotContain(
             result.Resolution.Candidates.SelectMany(static item => item.Evidence),
             static value => value.StartsWith(
