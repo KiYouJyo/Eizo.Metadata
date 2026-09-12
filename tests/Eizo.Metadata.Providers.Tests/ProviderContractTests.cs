@@ -15,6 +15,7 @@ public sealed class ProviderContractTests
         {
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.Contains("/v0/search/subjects", request.RequestUri!.AbsolutePath, StringComparison.Ordinal);
+            Assert.Contains("limit=50", request.RequestUri.Query, StringComparison.Ordinal);
             Assert.Contains("KiYouJyo/Eizo", request.Headers.UserAgent.ToString(), StringComparison.Ordinal);
 
             return Json("""
@@ -111,7 +112,7 @@ public sealed class ProviderContractTests
                 2),
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(2, postCount);
+        Assert.Equal(4, postCount);
     }
 
     [Fact]
