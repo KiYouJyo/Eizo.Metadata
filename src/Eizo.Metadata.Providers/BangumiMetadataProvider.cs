@@ -176,6 +176,29 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
             }
         }
 
+        // Bangumi often stores an official romanized alias where the middle arc
+        // wording differs from an English library title, or a long Chinese alias
+        // with inserted descriptors. Bridge only when the request/candidate pair
+        // has a strong structural identity; this improves scoring without turning
+        // generic franchise containment into an exact-title match.
+        for (var index = 0; index < result.Length; index++)
+        {
+            var bridge = FindConservativeRequestBridge(request.Titles, result[index].Titles);
+            if (bridge is null)
+            {
+                continue;
+            }
+
+            var aliases = result[index].Titles.Aliases
+                .Append(bridge)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            result[index] = result[index] with
+            {
+                Titles = result[index].Titles with { Aliases = aliases },
+            };
+        }
+
         return result;
     }
 
@@ -561,6 +584,166 @@ public sealed class BangumiMetadataProvider : IMetadataProvider, IMetadataRelati
         return new MetadataTitles(primary, original, localized, aliases);
     }
 
+    private static string? FindConservativeRequestBridge(
+        IReadOnlyList<string> requestTitles,
+        MetadataTitles candidateTitles)
+    {
+        foreach (var requestTitle in requestTitles.Take(8))
+        {
+            if (string.IsNullOrWhiteSpace(requestTitle))
+            {
+                continue;
+            }
+
+            foreach (var candidateTitle in candidateTitles.EnumerateAll())
+            {
+                if (string.IsNullOrWhiteSpace(candidateTitle))
+                {
+                    continue;
+                }
+
+                if (HasStrongLatinAnchorIdentity(requestTitle, candidateTitle) ||
+                    HasCjkInsertedDescriptorIdentity(requestTitle, candidateTitle))
+                {
+                    return requestTitle.Trim();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasStrongLatinAnchorIdentity(string requestTitle, string candidateTitle)
+    {
+        var requested = GetLatinTokens(requestTitle);
+        var candidate = GetLatinTokens(candidateTitle);
+        if (requested.Count < 4 || candidate.Count < 4)
+        {
+            return false;
+        }
+
+        if (!string.Equals(requested[0], candidate[0], StringComparison.Ordinal) ||
+            !string.Equals(requested[1], candidate[1], StringComparison.Ordinal) ||
+            !string.Equals(requested[2], candidate[2], StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var requestedLast = requested[^1];
+        var candidateLast = candidate[^1];
+        if (requestedLast.Length < 5 ||
+            !string.Equals(requestedLast, candidateLast, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var shared = 0;
+        var candidateIndex = 0;
+        foreach (var token in requested)
+        {
+            while (candidateIndex < candidate.Count &&
+                   !string.Equals(token, candidate[candidateIndex], StringComparison.Ordinal))
+            {
+                candidateIndex++;
+            }
+
+            if (candidateIndex >= candidate.Count)
+            {
+                continue;
+            }
+
+            shared++;
+            candidateIndex++;
+        }
+
+        return shared >= 4;
+    }
+
+    private static IReadOnlyList<string> GetLatinTokens(string value)
+    {
+        var normalized = value
+            .Normalize(System.Text.NormalizationForm.FormKC)
+            .ToUpperInvariant();
+        var tokens = new List<string>();
+        var builder = new System.Text.StringBuilder();
+
+        void Flush()
+        {
+            if (builder.Length >= 2)
+            {
+                tokens.Add(builder.ToString());
+            }
+
+            builder.Clear();
+        }
+
+        foreach (var c in normalized)
+        {
+            if (c is >= 'A' and <= 'Z' || char.IsDigit(c))
+            {
+                builder.Append(c);
+            }
+            else
+            {
+                Flush();
+            }
+        }
+
+        Flush();
+        return tokens;
+    }
+
+    private static bool HasCjkInsertedDescriptorIdentity(string requestTitle, string candidateTitle)
+    {
+        var requested = NormalizeComparableTitle(requestTitle);
+        var candidate = NormalizeComparableTitle(candidateTitle);
+        if (requested.Length < 6 ||
+            candidate.Length <= requested.Length ||
+            CountCjk(requested) < 6 ||
+            CountCjk(candidate) < 6 ||
+            candidate.Contains(requested, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var ratio = (double)requested.Length / candidate.Length;
+        return ratio is >= 0.55 and <= 0.92 &&
+               IsSubsequence(requested, candidate);
+    }
+
+    private static string NormalizeComparableTitle(string value)
+    {
+        var normalized = value
+            .Normalize(System.Text.NormalizationForm.FormKC)
+            .ToUpperInvariant();
+        var builder = new System.Text.StringBuilder(normalized.Length);
+        foreach (var c in normalized)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                builder.Append(c);
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static int CountCjk(string value) =>
+        value.Count(static c => c is >= '\u3400' and <= '\u9fff');
+
+    private static bool IsSubsequence(string shorter, string longer)
+    {
+        var index = 0;
+        foreach (var c in longer)
+        {
+            if (index < shorter.Length && shorter[index] == c)
+            {
+                index++;
+            }
+        }
+
+        return index == shorter.Length;
+    }
 
     private static MetadataSubjectKind MapKind(JsonElement item)
     {
