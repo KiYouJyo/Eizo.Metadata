@@ -761,6 +761,202 @@ public sealed class MetadataResolverTests
             static item => item.Candidate.Id.Value == "stardust");
     }
 
+    [Theory]
+    [InlineData(1, "stardust", 1)]
+    [InlineData(24, "stardust", 24)]
+    [InlineData(25, "egypt", 1)]
+    [InlineData(48, "egypt", 24)]
+    public async Task EnrichAsync_ResolvesAmbiguousTwoSubjectLocalSeasonFamily(
+        int localEpisode,
+        string expectedSubject,
+        int expectedEpisode)
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [
+                Candidate(
+                    "stardust",
+                    "JOJO的奇妙冒险 星尘斗士",
+                    2014,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "egypt",
+                    "JOJO的奇妙冒险 星尘斗士 埃及篇",
+                    2015,
+                    MetadataSubjectKind.Series,
+                    1),
+            ],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["stardust"] = new(
+                    "JOJO的奇妙冒险 星尘斗士",
+                    2014,
+                    24,
+                    "egypt"),
+                ["egypt"] = new(
+                    "JOJO的奇妙冒险 星尘斗士 埃及篇",
+                    2015,
+                    24,
+                    null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["JOJO的奇妙冒险", "第三季 星尘斗士"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: localEpisode,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.NotNull(result.Subject);
+        Assert.Equal(expectedSubject, result.Subject.Id.Value);
+        Assert.NotNull(result.Episode);
+        Assert.Equal(expectedEpisode, result.Episode.EpisodeNumber);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value ==
+                "local-season-subject-family=stardust>egypt");
+    }
+
+    [Theory]
+    [InlineData(1, "stone1", 1)]
+    [InlineData(12, "stone1", 12)]
+    [InlineData(13, "stone2", 1)]
+    [InlineData(24, "stone2", 12)]
+    [InlineData(25, "stone3", 1)]
+    [InlineData(38, "stone3", 14)]
+    public async Task EnrichAsync_ResolvesThreePartLocalSeasonFamily(
+        int localEpisode,
+        string expectedSubject,
+        int expectedEpisode)
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [
+                Candidate(
+                    "stone1",
+                    "JOJO的奇妙冒险 石之海",
+                    2021,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "stone2",
+                    "JOJO的奇妙冒险 石之海 第2部分",
+                    2022,
+                    MetadataSubjectKind.Series,
+                    1),
+                Candidate(
+                    "stone3",
+                    "JOJO的奇妙冒险 石之海 第3部分",
+                    2022,
+                    MetadataSubjectKind.Series,
+                    2),
+            ],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["stone1"] = new(
+                    "JOJO的奇妙冒险 石之海",
+                    2021,
+                    12,
+                    "stone2"),
+                ["stone2"] = new(
+                    "JOJO的奇妙冒险 石之海 第2部分",
+                    2022,
+                    12,
+                    "stone3"),
+                ["stone3"] = new(
+                    "JOJO的奇妙冒险 石之海 第3部分",
+                    2022,
+                    14,
+                    null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["JOJO的奇妙冒险", "第六季 石之海"],
+                null,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 5,
+                EpisodeNumber: localEpisode,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Resolution.IsResolved);
+        Assert.Equal(expectedSubject, result.Subject!.Id.Value);
+        Assert.Equal(expectedEpisode, result.Episode!.EpisodeNumber);
+        Assert.Contains(
+            result.Resolution.Best!.Evidence,
+            static value => value ==
+                "local-season-subject-family=stone1>stone2>stone3");
+    }
+
+    [Fact]
+    public async Task EnrichAsync_BlocksRelationChainWhenBestAlreadyMatchesRequestedInstallment()
+    {
+        var provider = new RelationChainProvider(
+            "fake",
+            [
+                Candidate(
+                    "gig",
+                    "攻壳机动队 S.A.C. 2nd GIG",
+                    2004,
+                    MetadataSubjectKind.Series,
+                    0),
+                Candidate(
+                    "individual",
+                    "攻壳机动队 S.A.C. 2nd GIG 个别的十一人",
+                    2006,
+                    MetadataSubjectKind.Series,
+                    1),
+            ],
+            new Dictionary<string, RelationNode>(StringComparer.Ordinal)
+            {
+                ["gig"] = new(
+                    "攻壳机动队 S.A.C. 2nd GIG",
+                    2004,
+                    26,
+                    "sss"),
+                ["individual"] = new(
+                    "攻壳机动队 S.A.C. 2nd GIG 个别的十一人",
+                    2006,
+                    1,
+                    null),
+                ["sss"] = new(
+                    "攻壳机动队 S.A.C. Solid State Society",
+                    2006,
+                    1,
+                    null),
+            });
+
+        var resolver = new MetadataResolver([provider]);
+        var result = await resolver.EnrichAsync(
+            new MetadataSearchRequest(
+                ["攻壳机动队 S.A.C.", "S02 攻壳机动队 S.A.C. 2nd GIG"],
+                2004,
+                MediaKind.SeriesEpisode,
+                SeasonNumber: 2,
+                EpisodeNumber: 1,
+                PreferredLanguage: "zh-CN",
+                Limit: 10),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Resolution.IsResolved);
+        Assert.Null(result.Subject);
+        Assert.DoesNotContain(
+            result.Resolution.Candidates.SelectMany(static item => item.Evidence),
+            static value => value.StartsWith(
+                "relation-chain=",
+                StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task EnrichAsync_ResolvesNamedArcThroughUniqueSeriesSequelChain()
     {
