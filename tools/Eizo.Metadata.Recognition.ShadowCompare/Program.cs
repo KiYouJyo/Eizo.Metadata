@@ -12,12 +12,7 @@ if (parsed.ShowHelp)
 var paths = new List<string>();
 if (!string.IsNullOrWhiteSpace(parsed.InputFile))
 {
-    paths.AddRange(
-        File.ReadLines(parsed.InputFile)
-            .Select(static line => line.Trim())
-            .Where(static line =>
-                line.Length > 0 &&
-                !line.StartsWith('#')));
+    paths.AddRange(ShadowInputReader.ReadPaths(parsed.InputFile));
 }
 
 paths.AddRange(parsed.Paths);
@@ -28,7 +23,7 @@ paths = paths
 
 if (paths.Count == 0)
 {
-    Console.Error.WriteLine("No media paths supplied. Use --input <paths.txt> or pass paths directly.");
+    Console.Error.WriteLine("No media paths supplied. Use --input <report.csv|paths.txt> or pass paths directly.");
     return 2;
 }
 
@@ -160,7 +155,7 @@ internal sealed record CliArguments(
               dotnet run --project tools/Eizo.Metadata.Recognition.ShadowCompare -- [options] [media-path ...]
 
             Options:
-              -i, --input <file>   Read one logical media path per line.
+              -i, --input <file>   Read paths.txt or an Eizo CSV report containing LogicalPath.
               -o, --output <file>  Write JSONL results to a file (stdout by default).
                   --single         Disable parent-folder batching / Anitomy ParseTogether.
               -h, --help           Show this help.
