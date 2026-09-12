@@ -191,6 +191,83 @@ public sealed class MetadataResolver
             }
         }
 
+        if (!resolution.IsResolved &&
+            resolution.Best is not null &&
+            request.RecognitionMediaKind == MediaKind.SeriesEpisode &&
+            request.SeasonNumber is > 1 &&
+            resolution.Best.Candidate.Id.Kind == MetadataSubjectKind.Series &&
+            resolution.Best.Score >= Math.Max(0.74, _options.AutoResolveThreshold - 0.06) &&
+            MetadataMatchScorer.HasExactTitleMatch(
+                request.Titles,
+                resolution.Best.Candidate.Titles))
+        {
+            provider ??= _providers.FirstOrDefault(item =>
+                string.Equals(
+                    item.Name,
+                    resolution.Best.Candidate.Id.Provider,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (provider is IMetadataRelationProvider relationProvider)
+            {
+                try
+                {
+                    var relationResult = await TryResolveSeasonByRelationChainAsync(
+                            provider,
+                            relationProvider,
+                            resolution.Best.Candidate.Id,
+                            request.SeasonNumber.Value,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (relationResult is not null)
+                    {
+                        subject = relationResult.Subject;
+                        var promotedScore = Math.Max(
+                            _options.AutoResolveThreshold + 0.02,
+                            resolution.Best.Score);
+
+                        var promotedCandidate = new MetadataResolutionCandidate(
+                            new MetadataSearchCandidate(
+                                subject.Id,
+                                subject.Titles,
+                                subject.ReleaseDate?.Year,
+                                resolution.Best.Candidate.ProviderRank),
+                            Math.Min(1.0, promotedScore),
+                            resolution.Best.Evidence
+                                .Concat(
+                                [
+                                    $"relation-chain=season:{request.SeasonNumber.Value}",
+                                    $"relation-chain-path={relationResult.Path}",
+                                ])
+                                .ToArray());
+
+                        var candidates = resolution.Candidates
+                            .Where(item => item.Candidate.Id != subject.Id)
+                            .Prepend(promotedCandidate)
+                            .ToArray();
+
+                        resolution = resolution with
+                        {
+                            Best = promotedCandidate,
+                            IsResolved = true,
+                            Confidence = promotedCandidate.Score,
+                            Candidates = candidates,
+                        };
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Relation traversal is a conservative enhancement only.
+                    // Any provider/API failure leaves the ordinary unresolved
+                    // result intact.
+                }
+            }
+        }
+
         if (!resolution.IsResolved || resolution.Best is null)
         {
             return new MetadataEnrichmentResult(
@@ -293,6 +370,92 @@ public sealed class MetadataResolver
         return lead >= _options.MinimumLead;
     }
 
+    private static async Task<RelationChainResult?> TryResolveSeasonByRelationChainAsync(
+        IMetadataProvider provider,
+        IMetadataRelationProvider relationProvider,
+        MetadataProviderItemId baseId,
+        int targetSeason,
+        CancellationToken cancellationToken)
+    {
+        if (targetSeason <= 1)
+        {
+            return null;
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal)
+        {
+            baseId.Value,
+        };
+        var current = await provider
+            .GetSubjectAsync(baseId, cancellationToken)
+            .ConfigureAwait(false);
+        if (current is null ||
+            current.Id.Kind != MetadataSubjectKind.Series)
+        {
+            return null;
+        }
+
+        var path = new List<string> { current.Id.Value };
+
+        for (var season = 2; season <= targetSeason; season++)
+        {
+            var relations = await relationProvider
+                .GetRelatedSubjectsAsync(current.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            var sequelRelations = relations
+                .Where(static relation => IsSequelRelation(relation.Relation))
+                .Where(relation => !visited.Contains(relation.SubjectId.Value))
+                .ToArray();
+
+            if (sequelRelations.Length == 0)
+            {
+                return null;
+            }
+
+            var sequelSubjects = new List<MetadataSubject>();
+            foreach (var relation in sequelRelations)
+            {
+                var related = await provider
+                    .GetSubjectAsync(relation.SubjectId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (related is { Id.Kind: MetadataSubjectKind.Series })
+                {
+                    sequelSubjects.Add(related);
+                }
+            }
+
+            var distinctSeries = sequelSubjects
+                .GroupBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+                .Select(static group => group.First())
+                .ToArray();
+
+            if (distinctSeries.Length != 1)
+            {
+                return null;
+            }
+
+            current = distinctSeries[0];
+            visited.Add(current.Id.Value);
+            path.Add(current.Id.Value);
+        }
+
+        return new RelationChainResult(
+            current,
+            string.Join(">", path));
+    }
+
+    private static bool IsSequelRelation(string value)
+    {
+        var normalized = value
+            .Normalize(NormalizationForm.FormKC)
+            .Trim();
+
+        return normalized.Equals("续集", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("續集", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("SEQUEL", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static MetadataEpisode? SelectEpisode(
         MetadataSearchRequest request,
         IReadOnlyList<MetadataEpisode> episodes)
@@ -346,6 +509,10 @@ public sealed class MetadataResolver
                     exception.Message));
         }
     }
+
+    private sealed record RelationChainResult(
+        MetadataSubject Subject,
+        string Path);
 
     private sealed record ProviderSearchOutcome(
         IReadOnlyList<MetadataSearchCandidate> Candidates,
