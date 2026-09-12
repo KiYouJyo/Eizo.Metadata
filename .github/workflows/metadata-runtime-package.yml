@@ -10,7 +10,8 @@ on:
       - "codex/metadata-runtime-0.2.8"
       - "codex/metadata-runtime-0.2.9"
       - "codex/metadata-runtime-0.2.10"
-      - "codex/metadata-runtime-0.2.11"
+      - "codex/metadata-runtime-0.2.12"
+      - "codex/metadata-runtime-0.2.12"
   workflow_dispatch:
 
 permissions:
@@ -46,7 +47,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.11'
+          $version = '0.2.12'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -123,28 +124,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.11-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.12-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.11-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.12-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.11
+      - name: Publish Metadata runtime v0.2.12
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.11 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.11 already exists; leaving the published release immutable.'
+          if gh release view v0.2.12 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.12 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.11 \
+          gh release create v0.2.12 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.11" \
-            --notes "Field-corrected relation release. v0.2.11 normalizes raw titles before relation probing, collapses same-season provider parts such as Season 3 Part.2, guarantees a relation-confirmed lead for consistent diagnostics, and keeps ambiguous or structurally unconfirmed local partitions unresolved." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.11-x64.zip" \
+            --title "Eizo.Metadata v0.2.12" \
+            --notes "Relation-branch ranking release. v0.2.12 keeps the 0.2.11 field fixes and can safely continue through provider graphs with multiple series sequels by combining franchise-title affinity, chronology, installment structure, and side-content penalties. Near-tied branches remain unresolved." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.12-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
