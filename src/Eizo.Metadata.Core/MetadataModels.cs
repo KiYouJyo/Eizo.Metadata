@@ -194,6 +194,11 @@ internal static class MetadataSearchTitleNormalizer
         Options,
         Timeout);
 
+    private static readonly Regex ParenthesizedBilingualRegex = new(
+        @"^(?<cjk>.+[\u3040-\u30ff\u3400-\u9fff])\s*[\(（]\s*(?<latin>[A-Z][A-Z0-9 '&+:/.-]{2,})\s*[\)）]\s*$",
+        Options,
+        Timeout);
+
     private static readonly Regex ProviderIdSuffixRegex = new(
         @"\s*\{\s*(?:tmdb|tmdbid|tvdb|imdb)\s*[-_:]?\s*[^}]+\}\s*$",
         Options,
@@ -216,6 +221,11 @@ internal static class MetadataSearchTitleNormalizer
 
     private static readonly Regex MultiSeparatorRegex = new(
         @"[._]+",
+        RegexOptions.CultureInvariant,
+        Timeout);
+
+    private static readonly Regex SearchPunctuationRegex = new(
+        @"[^\p{L}\p{N}]+",
         RegexOptions.CultureInvariant,
         Timeout);
 
@@ -383,12 +393,26 @@ internal static class MetadataSearchTitleNormalizer
         var sourceNormalized = value
             .Normalize(NormalizationForm.FormKC)
             .Trim();
+        sourceNormalized = ProviderIdSuffixRegex.Replace(sourceNormalized, string.Empty);
+        sourceNormalized = TrailingYearRegex.Replace(sourceNormalized, string.Empty).Trim();
+
         var bilingual = CjkLatinBilingualRegex.Match(sourceNormalized);
         if (bilingual.Success)
         {
             Add(variants, Normalize(bilingual.Groups["cjk"].Value));
             Add(variants, Normalize(bilingual.Groups["latin"].Value));
         }
+
+        var parenthesized = ParenthesizedBilingualRegex.Match(sourceNormalized);
+        if (parenthesized.Success)
+        {
+            Add(variants, Normalize(parenthesized.Groups["cjk"].Value));
+            Add(variants, Normalize(parenthesized.Groups["latin"].Value));
+        }
+
+        var punctuationFolded = SearchPunctuationRegex.Replace(sourceNormalized, " ");
+        punctuationFolded = MultiWhitespaceRegex.Replace(punctuationFolded, " ").Trim();
+        Add(variants, punctuationFolded);
 
         return variants;
     }
@@ -437,9 +461,31 @@ internal static class MetadataSearchRequestNormalizer
             titles.Add(fallback);
         }
 
+        if (request.Year is >= 1900 and <= 2039)
+        {
+            var year = request.Year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var yearBases = titles
+                .Select(MetadataSearchTitleNormalizer.Normalize)
+                .Where(static title => !string.IsNullOrWhiteSpace(title))
+                .Where(static title => !MetadataSearchTitleNormalizer.IsWeakStandaloneTitle(title))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static title => title.Length)
+                .Take(3)
+                .ToArray();
+
+            foreach (var baseTitle in yearBases)
+            {
+                var yearPinned = $"{baseTitle} {year}";
+                if (!titles.Contains(yearPinned, StringComparer.OrdinalIgnoreCase))
+                {
+                    titles.Add(yearPinned);
+                }
+            }
+        }
+
         return request with
         {
-            Titles = titles.Take(10).ToArray(),
+            Titles = titles.Take(12).ToArray(),
             Limit = Math.Clamp(request.Limit, 1, 25),
         };
     }
