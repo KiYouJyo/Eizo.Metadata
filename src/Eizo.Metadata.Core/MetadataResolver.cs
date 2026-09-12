@@ -366,6 +366,8 @@ public sealed class MetadataResolver
 
                 if (continuation is not null)
                 {
+                    var previousSubjectId = resolution.Best.Candidate.Id;
+
                     subject = continuation.Subject;
                     id = subject.Id;
                     episodeRequest = request with
@@ -394,7 +396,9 @@ public sealed class MetadataResolver
                     {
                         Best = promotedBest,
                         Candidates = resolution.Candidates
-                            .Where(item => item.Candidate.Id != subject.Id)
+                            .Where(item =>
+                                item.Candidate.Id != subject.Id &&
+                                item.Candidate.Id != previousSubjectId)
                             .Prepend(promotedBest)
                             .ToArray(),
                     };
