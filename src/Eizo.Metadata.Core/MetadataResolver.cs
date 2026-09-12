@@ -317,6 +317,7 @@ public sealed class MetadataResolver
         }
 
         var id = resolution.Best.Candidate.Id;
+        var episodeRequest = request;
         provider ??= _providers.FirstOrDefault(item =>
             string.Equals(item.Name, id.Provider, StringComparison.OrdinalIgnoreCase));
 
@@ -348,18 +349,82 @@ public sealed class MetadataResolver
             return new MetadataEnrichmentResult(resolution, null, null, errors);
         }
 
+        if (subject is not null &&
+            id.Kind == MetadataSubjectKind.Series &&
+            request.EpisodeNumber is not null &&
+            provider is IMetadataRelationProvider relationProvider)
+        {
+            try
+            {
+                var continuation = await TryAdvanceEpisodeOverflowAsync(
+                        provider,
+                        relationProvider,
+                        subject,
+                        request.EpisodeNumber.Value,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (continuation is not null)
+                {
+                    subject = continuation.Subject;
+                    id = subject.Id;
+                    episodeRequest = request with
+                    {
+                        SeasonNumber = null,
+                        EpisodeNumber = continuation.EpisodeNumber,
+                    };
+
+                    var promotedBest = new MetadataResolutionCandidate(
+                        new MetadataSearchCandidate(
+                            subject.Id,
+                            subject.Titles,
+                            subject.ReleaseDate?.Year,
+                            resolution.Best.Candidate.ProviderRank),
+                        resolution.Best.Score,
+                        resolution.Best.Evidence
+                            .Concat(
+                            [
+                                $"episode-subject-span={continuation.Path}",
+                                $"episode-offset={request.EpisodeNumber.Value.ToString(CultureInfo.InvariantCulture)}->{continuation.EpisodeNumber.ToString(CultureInfo.InvariantCulture)}",
+                            ])
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray());
+
+                    resolution = resolution with
+                    {
+                        Best = promotedBest,
+                        Candidates = resolution.Candidates
+                            .Where(item => item.Candidate.Id != subject.Id)
+                            .Prepend(promotedBest)
+                            .ToArray(),
+                    };
+                }
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Episode overflow continuation is optional enrichment. If a
+                // relation/detail request fails, keep the resolved base subject
+                // and let episode lookup fall back to the original request.
+            }
+        }
+
         MetadataEpisode? episode = null;
         if (subject is not null &&
             id.Kind == MetadataSubjectKind.Series &&
-            request.EpisodeNumber is not null)
+            episodeRequest.EpisodeNumber is not null)
         {
             try
             {
                 var episodes = await provider
-                    .GetEpisodesAsync(id, request.SeasonNumber, cancellationToken)
+                    .GetEpisodesAsync(id, episodeRequest.SeasonNumber, cancellationToken)
                     .ConfigureAwait(false);
 
-                episode = SelectEpisode(request, episodes);
+                episode = SelectEpisode(episodeRequest, episodes);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -654,6 +719,151 @@ public sealed class MetadataResolver
                normalized.Equals("SEQUEL", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async Task<EpisodeSubjectContinuation?> TryAdvanceEpisodeOverflowAsync(
+        IMetadataProvider provider,
+        IMetadataRelationProvider relationProvider,
+        MetadataSubject initialSubject,
+        decimal localEpisodeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (initialSubject.EpisodeCount is not > 0 ||
+            localEpisodeNumber <= initialSubject.EpisodeCount.Value)
+        {
+            return null;
+        }
+
+        var current = initialSubject;
+        var remainingEpisode = localEpisodeNumber;
+        var visited = new HashSet<string>(StringComparer.Ordinal)
+        {
+            current.Id.Value,
+        };
+        var path = new List<string> { current.Id.Value };
+
+        for (var hop = 0; hop < 6; hop++)
+        {
+            if (current.EpisodeCount is not > 0 ||
+                remainingEpisode <= current.EpisodeCount.Value)
+            {
+                break;
+            }
+
+            remainingEpisode -= current.EpisodeCount.Value;
+
+            var relations = await relationProvider
+                .GetRelatedSubjectsAsync(current.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            var continuationSubjects = new List<MetadataSubject>();
+            foreach (var relation in relations
+                         .Where(static relation =>
+                             IsSequelRelation(relation.Relation)))
+            {
+                if (visited.Contains(relation.SubjectId.Value))
+                {
+                    continue;
+                }
+
+                var related = await provider
+                    .GetSubjectAsync(relation.SubjectId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (related is { Id.Kind: MetadataSubjectKind.Series } &&
+                    IsSameLocalSeasonContinuation(current, related))
+                {
+                    continuationSubjects.Add(related);
+                }
+            }
+
+            var candidates = continuationSubjects
+                .GroupBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+                .Select(static group => group.First())
+                .Where(subject =>
+                    subject.ReleaseDate is null ||
+                    current.ReleaseDate is null ||
+                    subject.ReleaseDate.Value >= current.ReleaseDate.Value.AddDays(-31))
+                .OrderBy(static subject => subject.ReleaseDate)
+                .ThenBy(static subject => subject.Id.Value, StringComparer.Ordinal)
+                .ToArray();
+
+            if (candidates.Length == 0)
+            {
+                return null;
+            }
+
+            var next = candidates[0];
+            if (candidates.Length > 1 &&
+                candidates[0].ReleaseDate == candidates[1].ReleaseDate)
+            {
+                return null;
+            }
+
+            current = next;
+            visited.Add(current.Id.Value);
+            path.Add(current.Id.Value);
+        }
+
+        if (current.Id == initialSubject.Id ||
+            current.EpisodeCount is not > 0 ||
+            remainingEpisode <= 0 ||
+            remainingEpisode > current.EpisodeCount.Value)
+        {
+            return null;
+        }
+
+        return new EpisodeSubjectContinuation(
+            current,
+            remainingEpisode,
+            string.Join(">", path));
+    }
+
+    private static bool IsSameLocalSeasonContinuation(
+        MetadataSubject current,
+        MetadataSubject next)
+    {
+        var currentInstallment = MetadataMatchScorer.GetTitleInstallment(
+            current.Titles);
+        var nextInstallment = MetadataMatchScorer.GetTitleInstallment(
+            next.Titles);
+
+        if (currentInstallment is not null &&
+            nextInstallment == currentInstallment)
+        {
+            return true;
+        }
+
+        var currentTitles = current.Titles
+            .EnumerateAll()
+            .Select(MetadataMatchScorer.NormalizeTitleForComparison)
+            .Where(static value => value.Length >= 4)
+            .ToArray();
+        var nextTitles = next.Titles
+            .EnumerateAll()
+            .Select(MetadataMatchScorer.NormalizeTitleForComparison)
+            .Where(static value => value.Length >= 4)
+            .ToArray();
+
+        foreach (var left in currentTitles)
+        {
+            foreach (var right in nextTitles)
+            {
+                if (left.Contains(right, StringComparison.Ordinal) ||
+                    right.Contains(left, StringComparison.Ordinal))
+                {
+                    var ratio =
+                        (double)Math.Min(left.Length, right.Length) /
+                        Math.Max(left.Length, right.Length);
+                    if (ratio >= 0.72)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static MetadataEpisode? SelectEpisode(
         MetadataSearchRequest request,
         IReadOnlyList<MetadataEpisode> episodes)
@@ -707,6 +917,11 @@ public sealed class MetadataResolver
                     exception.Message));
         }
     }
+
+    private sealed record EpisodeSubjectContinuation(
+        MetadataSubject Subject,
+        decimal EpisodeNumber,
+        string Path);
 
     private sealed record RelationChainResult(
         MetadataSubject Subject,
@@ -794,6 +1009,9 @@ internal static class MetadataMatchScorer
         IReadOnlyList<string> requestedTitles,
         MetadataTitles candidateTitles) =>
         BestNamedSeasonSemanticScore(requestedTitles, candidateTitles) >= 0.88;
+
+    internal static string NormalizeTitleForComparison(string value) =>
+        NormalizeTitle(value);
 
     internal static MetadataResolutionCandidate Score(
         MetadataSearchRequest request,
