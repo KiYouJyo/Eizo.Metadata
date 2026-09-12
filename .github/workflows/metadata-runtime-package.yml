@@ -17,6 +17,7 @@ on:
       - "codex/metadata-runtime-0.2.15"
       - "codex/metadata-runtime-0.2.16"
       - "codex/metadata-runtime-0.2.17"
+      - "codex/metadata-runtime-0.2.18"
   workflow_dispatch:
 
 permissions:
@@ -52,7 +53,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '0.2.17'
+          $version = '0.2.18'
           $root = Join-Path $env:RUNNER_TEMP "Eizo.Metadata.Runtime-v$version-x64"
           $bin = Join-Path $root 'bin'
           $buildRoot = Join-Path $env:RUNNER_TEMP 'metadata-module-build'
@@ -129,28 +130,28 @@ jobs:
       - name: Upload Metadata runtime assets
         uses: actions/upload-artifact@v4
         with:
-          name: Eizo-Metadata-runtime-v0.2.17-${{ github.sha }}
+          name: Eizo-Metadata-runtime-v0.2.18-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.17-x64.zip
+            ${{ runner.temp }}/Eizo.Recognition.Runtime-v0.2.18-x64.zip
             ${{ runner.temp }}/eizo-recognition-release.json
             ${{ runner.temp }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish Metadata runtime v0.2.17
+      - name: Publish Metadata runtime v0.2.18
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view v0.2.17 >/dev/null 2>&1; then
-            echo 'Eizo.Metadata v0.2.17 already exists; leaving the published release immutable.'
+          if gh release view v0.2.18 >/dev/null 2>&1; then
+            echo 'Eizo.Metadata v0.2.18 already exists; leaving the published release immutable.'
             exit 0
           fi
-          gh release create v0.2.17 \
+          gh release create v0.2.18 \
             --target "${GITHUB_SHA}" \
-            --title "Eizo.Metadata v0.2.17" \
-            --notes "Final resolver closure release. v0.2.17 adds punctuation-, year- and bilingual-aware provider recall plus conservative Bangumi cross-language title bridges while preserving the global 0.82 / 0.06 safety gates and leaving low-value extras unresolved." \
-            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.17-x64.zip" \
+            --title "Eizo.Metadata v0.2.18" \
+            --notes "Diagnostics hardening release. v0.2.18 adds ABI-safe failure-stage and failure-reason reporting across search, ranking, installment mapping, subject resolution, episode mapping and provider fetch without changing the 0.82 / 0.06 safety gates." \
+            "${RUNNER_TEMP}/Eizo.Recognition.Runtime-v0.2.18-x64.zip" \
             "${RUNNER_TEMP}/eizo-recognition-release.json" \
             "${RUNNER_TEMP}/SHA256SUMS.txt"
