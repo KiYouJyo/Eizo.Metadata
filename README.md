@@ -14,7 +14,7 @@ Eizo.Metadata.Core          canonical metadata contracts, resolver and cache
 Eizo.Metadata.Providers     Bangumi / TMDB HTTP provider implementations
 ```
 
-## Runtime 0.2.16 scope
+## Runtime 0.2.17 scope
 
 ### Eizo.Metadata.Recognition
 
@@ -99,29 +99,31 @@ automatically includes every `src/Eizo.Metadata.*` module while retaining
 
 ## Status
 
-**Metadata Runtime 0.2.16 — resolver closure pass.**
+**Metadata Runtime 0.2.17 — final resolver closure pass.**
 
-Metadata 0.2.16 closes the remaining high-value resolver gaps found by the 6,067-file
-real-library report without expanding Recognition grammar or lowering the global
-0.82 / 0.06 auto-resolve gates.
+Metadata 0.2.17 follows the 0.2.16 real-library validation pass, which raised resolved
+metadata coverage from 89.60% to 91.68% while leaving Recognition behavior unchanged.
+This release keeps the same global 0.82 score and 0.06 winner-lead safety gates and
+focuses only on remaining high-confidence resolver failures.
 
-The provider-search boundary now removes compact season coverage such as `1-2季`,
-emits conservative base-title / Part / bilingual / spaced-subtitle variants, and lets
-Bangumi search up to five strong query variants with a wider 50-subject recovery window.
-This is intended to recover canonical subjects that were previously absent from the
-candidate set for franchise-heavy or library-formatted titles.
+Provider search now emits punctuation-folded, parenthesized bilingual, and conservative
+year-pinned variants. This lets local names such as `LoveLive! Sunshine!!`,
+`龙樱 (Dragon Sakura)`, and library-sorted `鲁邦三世part4` reach canonical provider
+subjects without teaching the offline Recognition parser provider-specific aliases.
+Bangumi evaluates up to seven strong query variants while keeping the 50-subject recovery
+window introduced in 0.2.16.
 
-Resolver scoring now distinguishes an exact named-season title from derivative works
-that merely contain that season title, preventing one-episode compilations or OVAs from
-tying the canonical season. Two narrowly bounded promotions can close results within
-0.02 of the normal score threshold when either the requested installment matches
-structurally or an exceptionally strong title winner has a safe lead. Every promotion
-adds explicit evidence and promotes the diagnostic score, so downstream reports remain
-internally consistent.
+Bangumi alias enrichment also performs two narrow identity bridges before Core scoring:
+a Latin bridge requires the same first three stable tokens plus a matching long final
+anchor, while a CJK bridge requires a substantial in-order title match with provider
+words inserted between the local title characters. These rules cover translated arc
+wording and descriptive Chinese aliases without converting ordinary franchise
+containment into an exact-title match.
 
-Local-season subject families, sequel-chain safety, ambiguity handling, and the existing
-single-subject local-split guard remain unchanged; unsafe cases stay unresolved rather
-than being forced.
+Recognition remains frozen and provider-neutral. Low-value extras such as menus,
+trailers, NCOP/NCED and bonus material are intentionally allowed to remain unresolved;
+they are not a reason to weaken resolver safety or continue adding parser rules.
+
 ## License
 
 A project license has not yet been declared.
