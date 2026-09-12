@@ -1582,7 +1582,7 @@ internal static class MetadataMatchScorer
             (installmentSource == "title" || request.SeasonNumber is > 1);
 
         if (exactInstallment &&
-            titleScore >= 0.82)
+            titleScore >= 0.81)
         {
             evidence =
                 $"near-threshold=exact-installment:title:{titleScore:0.000},lead:{lead:0.000}";
